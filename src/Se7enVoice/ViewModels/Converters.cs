@@ -1,0 +1,23 @@
+using System.Globalization;
+using System.Windows;
+using System.Windows.Data;
+
+namespace Se7enVoice.ViewModels;
+
+public static class Converters
+{
+    public static IValueConverter BoolToVisibility { get; } = new Lambda(v => v is true);
+    public static IValueConverter InverseBoolToVisibility { get; } = new Lambda(v => v is not true);
+    public static IValueConverter NotEmptyToVisibility { get; } = new Lambda(v => v is string s && s.Length > 0);
+    public static IValueConverter CountToVisibility { get; } = new Lambda(v => v is int n && n > 0);
+    public static IValueConverter ZeroToVisibility { get; } = new Lambda(v => v is int n && n == 0);
+
+    private sealed class Lambda(Func<object?, bool> visible) : IValueConverter
+    {
+        public object Convert(object? value, Type targetType, object? parameter, CultureInfo culture) =>
+            visible(value) ? Visibility.Visible : Visibility.Collapsed;
+
+        public object ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture) =>
+            throw new NotSupportedException();
+    }
+}

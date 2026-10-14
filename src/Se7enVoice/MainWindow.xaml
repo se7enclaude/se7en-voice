@@ -1,0 +1,905 @@
+<Window x:Class="Se7enVoice.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:c="clr-namespace:Se7enVoice.Controls"
+        xmlns:vm="clr-namespace:Se7enVoice.ViewModels"
+        Title="se7en Voice" Width="1220" Height="800" MinWidth="1020" MinHeight="680"
+        WindowStartupLocation="CenterScreen" Background="{StaticResource Night900Brush}"
+        FontFamily="{StaticResource FontUi}" Foreground="{StaticResource PaperBrush}"
+        UseLayoutRounding="True" TextOptions.TextFormattingMode="Ideal" AllowDrop="True"
+        Icon="pack://application:,,,/Assets/app.ico">
+
+    <WindowChrome.WindowChrome>
+        <WindowChrome CaptionHeight="64" ResizeBorderThickness="6" GlassFrameThickness="0" CornerRadius="0" UseAeroCaptionButtons="False" />
+    </WindowChrome.WindowChrome>
+
+    <Window.Resources>
+        <BooleanToVisibilityConverter x:Key="BoolToVis" />
+
+        <!-- Tuile de preset (LevelTile Slipstream) -->
+        <DataTemplate x:Key="PresetTile" DataType="{x:Type vm:PresetItem}">
+            <Button x:Name="tile" Height="118" Margin="0,0,14,14" Cursor="Hand" Focusable="False"
+                    Click="PresetTile_Click" Tag="{Binding}">
+                <Button.Template>
+                    <ControlTemplate TargetType="Button">
+                        <Grid x:Name="root">
+                            <Border x:Name="glow" Background="Transparent" Margin="-1" />
+                            <Border x:Name="slot" Background="{StaticResource SlotBrush}" BorderBrush="{StaticResource SlotInnerBrush}"
+                                    BorderThickness="5" CornerRadius="2" ClipToBounds="True">
+                                <Grid>
+                                    <!-- Bande d'accent inclinée -->
+                                    <Border Width="64" HorizontalAlignment="Right" Margin="0,-10,-22,-10" Opacity="0.22"
+                                            Background="{Binding ToneBrush}" RenderTransformOrigin="0.5,0.5" RenderTransform="{StaticResource Slant}" />
+                                    <StackPanel Margin="14,12,10,8">
+                                        <TextBlock Text="{Binding Icon}" Style="{StaticResource IconText}" FontSize="26" HorizontalAlignment="Left"
+                                                   Foreground="{Binding ToneBrush}" />
+                                        <TextBlock Text="{Binding Name}" FontFamily="{StaticResource FontDisplay}" FontSize="23" Margin="0,8,0,0"
+                                                   Foreground="{StaticResource PaperBrush}" TextTrimming="CharacterEllipsis"
+                                                   RenderTransformOrigin="0,0.5" RenderTransform="{StaticResource SlantSoft}" />
+                                        <TextBlock Text="{Binding Tagline}" Style="{StaticResource CaptionText}" TextTrimming="CharacterEllipsis" />
+                                    </StackPanel>
+                                </Grid>
+                            </Border>
+                        </Grid>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="root" Property="Margin" Value="0,-3,0,3" />
+                                <Setter TargetName="slot" Property="BorderBrush" Value="{StaticResource Violet400Brush}" />
+                            </Trigger>
+                            <DataTrigger Binding="{Binding IsSelected}" Value="True">
+                                <Setter TargetName="slot" Property="BorderBrush" Value="{StaticResource VoltBrush}" />
+                                <Setter TargetName="glow" Property="Effect">
+                                    <Setter.Value>
+                                        <DropShadowEffect Color="{StaticResource Volt500}" BlurRadius="24" ShadowDepth="0" Opacity="0.55" />
+                                    </Setter.Value>
+                                </Setter>
+                                <Setter TargetName="glow" Property="Background" Value="{StaticResource VoltBrush}" />
+                            </DataTrigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Button.Template>
+                <Button.ContextMenu>
+                    <ContextMenu Visibility="{Binding IsUser, Converter={StaticResource BoolToVis}}">
+                        <MenuItem Header="Exporter (partager avec un ami)…" Click="ExportPreset_Click" Tag="{Binding}" />
+                        <MenuItem Header="Supprimer" Click="DeletePreset_Click" Tag="{Binding}" />
+                    </ContextMenu>
+                </Button.ContextMenu>
+            </Button>
+        </DataTemplate>
+
+        <!-- Ligne d'effet -->
+        <Style x:Key="EffectRow" TargetType="Border">
+            <Setter Property="Background" Value="{StaticResource InsetBrush}" />
+            <Setter Property="CornerRadius" Value="2" />
+            <Setter Property="Padding" Value="20,14,20,14" />
+            <Setter Property="Margin" Value="0,0,0,10" />
+            <Setter Property="BorderBrush" Value="{StaticResource VoltBrush}" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Style.Triggers>
+                <Trigger Property="IsMouseOver" Value="True">
+                    <Setter Property="Background" Value="{StaticResource InsetHoverBrush}" />
+                </Trigger>
+                <DataTrigger Binding="{Binding Tag.IsChecked, RelativeSource={RelativeSource Self}}" Value="True">
+                    <Setter Property="BorderThickness" Value="4,0,0,0" />
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+        <Style x:Key="EffectTitle" TargetType="TextBlock" BasedOn="{StaticResource DisplayText}">
+            <Setter Property="FontSize" Value="24" />
+            <Setter Property="RenderTransformOrigin" Value="0,0.5" />
+        </Style>
+    </Window.Resources>
+
+    <Grid>
+        <!-- ===== Décor : plans violets inclinés + ligne de piste ===== -->
+        <Canvas IsHitTestVisible="False" ClipToBounds="True">
+            <Border Canvas.Left="-120" Canvas.Top="380" Width="760" Height="900" Background="{StaticResource Night800Brush}"
+                    RenderTransform="{StaticResource Slant}" />
+            <Border Canvas.Left="760" Canvas.Top="120" Width="520" Height="1100" Background="{StaticResource Night800Brush}" Opacity="0.7"
+                    RenderTransform="{StaticResource Slant}" />
+            <Border Canvas.Left="1180" Canvas.Top="260" Width="300" Height="1000" Background="{StaticResource Night700Brush}" Opacity="0.5"
+                    RenderTransform="{StaticResource Slant}" />
+        </Canvas>
+
+        <Grid>
+            <Grid.RowDefinitions>
+                <RowDefinition Height="72" />
+                <RowDefinition Height="*" />
+                <RowDefinition Height="58" />
+            </Grid.RowDefinitions>
+
+            <!-- ===== Barre du haut ===== -->
+            <Border Grid.Row="0" Background="{StaticResource Night950Brush}">
+                <Grid Margin="22,0,0,0">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+
+                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                        <Grid Width="44" Height="40" Margin="0,0,14,0">
+                            <Border Background="{StaticResource SurgeBrush}" Margin="5,5,-3,-3" RenderTransformOrigin="0.5,0.5" RenderTransform="{StaticResource Slant}" />
+                            <Border Background="{StaticResource VoltBrush}" RenderTransformOrigin="0.5,0.5" RenderTransform="{StaticResource Slant}">
+                                <TextBlock Text="7" FontFamily="{StaticResource FontDisplayBlack}" FontSize="32" Foreground="{StaticResource Night900Brush}"
+                                           HorizontalAlignment="Center" VerticalAlignment="Center" Margin="0,-2,0,0" />
+                            </Border>
+                        </Grid>
+                        <TextBlock Style="{StaticResource DisplayText}" FontFamily="{StaticResource FontDisplayBlack}" FontSize="32" VerticalAlignment="Center">
+                            <Run Text="SE7EN" /><Run Text=" VOICE" Foreground="{StaticResource VoltBrush}" />
+                        </TextBlock>
+                    </StackPanel>
+
+                    <StackPanel Grid.Column="1" Orientation="Horizontal" HorizontalAlignment="Center" VerticalAlignment="Center"
+                                WindowChrome.IsHitTestVisibleInChrome="True">
+                        <RadioButton x:Name="TabVoice" Style="{StaticResource TabButton}" Content="VOIX" IsChecked="True" Checked="Tab_Checked" />
+                        <RadioButton x:Name="TabEffects" Style="{StaticResource TabButton}" Content="EFFETS" Checked="Tab_Checked" />
+                        <RadioButton x:Name="TabSounds" Style="{StaticResource TabButton}" Content="SOUNDBOARD" Checked="Tab_Checked" />
+                        <RadioButton x:Name="TabSettings" Style="{StaticResource TabButton}" Content="RÉGLAGES" Checked="Tab_Checked" />
+                    </StackPanel>
+
+                    <!-- Statut du micro virtuel -->
+                    <Border Grid.Column="2" Margin="0,0,22,0" Cursor="Hand"
+                            WindowChrome.IsHitTestVisibleInChrome="True" MouseLeftButtonUp="CableBadge_Click">
+                        <Border.Style>
+                            <Style TargetType="Border" BasedOn="{StaticResource Badge}">
+                                <Setter Property="Background" Value="{StaticResource HazardBrush}" />
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding CableFound}" Value="True">
+                                        <Setter Property="Background" Value="{StaticResource BoostBrush}" />
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </Border.Style>
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Style="{StaticResource IconText}" FontSize="13" Margin="0,0,6,2" Foreground="{StaticResource Night900Brush}" Text="&#xE720;" />
+                            <TextBlock>
+                                <TextBlock.Style>
+                                    <Style TargetType="TextBlock" BasedOn="{StaticResource BadgeText}">
+                                        <Setter Property="Text" Value="MICRO VIRTUEL ABSENT" />
+                                        <Setter Property="Foreground" Value="{StaticResource PaperBrush}" />
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding CableFound}" Value="True">
+                                                <Setter Property="Text" Value="MICRO VIRTUEL OK" />
+                                                <Setter Property="Foreground" Value="{StaticResource Night900Brush}" />
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </TextBlock.Style>
+                            </TextBlock>
+                        </StackPanel>
+                    </Border>
+
+                    <StackPanel Grid.Column="3" Orientation="Horizontal" VerticalAlignment="Top" WindowChrome.IsHitTestVisibleInChrome="True">
+                        <StackPanel.Resources>
+                            <Style TargetType="Button">
+                                <Setter Property="Width" Value="52" />
+                                <Setter Property="Height" Value="40" />
+                                <Setter Property="Foreground" Value="{StaticResource Violet200Brush}" />
+                                <Setter Property="Focusable" Value="False" />
+                                <Setter Property="Template">
+                                    <Setter.Value>
+                                        <ControlTemplate TargetType="Button">
+                                            <Border x:Name="b" Background="Transparent">
+                                                <TextBlock Text="{TemplateBinding Content}" Style="{StaticResource IconText}" FontSize="12"
+                                                           HorizontalAlignment="Center" Foreground="{TemplateBinding Foreground}" />
+                                            </Border>
+                                            <ControlTemplate.Triggers>
+                                                <Trigger Property="IsMouseOver" Value="True">
+                                                    <Setter TargetName="b" Property="Background" Value="{Binding Tag, RelativeSource={RelativeSource TemplatedParent}}" />
+                                                    <Setter Property="Foreground" Value="{StaticResource PaperBrush}" />
+                                                </Trigger>
+                                            </ControlTemplate.Triggers>
+                                        </ControlTemplate>
+                                    </Setter.Value>
+                                </Setter>
+                            </Style>
+                        </StackPanel.Resources>
+                        <Button Content="&#xE921;" Click="Minimize_Click" Tag="{StaticResource Night600Brush}" ToolTip="Réduire" />
+                        <Button Content="&#xE922;" Click="Maximize_Click" Tag="{StaticResource Night600Brush}" ToolTip="Agrandir" />
+                        <Button Content="&#xE8BB;" Click="Close_Click" Tag="{StaticResource HazardBrush}" ToolTip="Fermer" />
+                    </StackPanel>
+                </Grid>
+            </Border>
+            <!-- Ligne de piste : liseré volt + soulignement surge -->
+            <StackPanel Grid.Row="0" VerticalAlignment="Bottom" IsHitTestVisible="False">
+                <Rectangle Height="3" Fill="{StaticResource VoltBrush}" />
+                <Rectangle Height="2" Fill="{StaticResource SurgeBrush}" Opacity="0.8" Margin="0,2,0,0" />
+            </StackPanel>
+
+            <!-- ===== Contenu ===== -->
+            <Grid Grid.Row="1" Margin="32,28,32,8">
+
+                <!-- ========== PAGE VOIX ========== -->
+                <Grid x:Name="PageVoice">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="360" />
+                        <ColumnDefinition Width="28" />
+                        <ColumnDefinition Width="*" />
+                    </Grid.ColumnDefinitions>
+
+                    <ScrollViewer VerticalScrollBarVisibility="Auto" Margin="0,0,-12,0" Padding="0,0,12,0">
+                    <StackPanel>
+                        <HeaderedContentControl Style="{StaticResource FrostPanel}" Header="MICRO">
+                            <StackPanel>
+                                <ComboBox ItemsSource="{Binding Microphones}" SelectedValue="{Binding SelectedMicrophone}" Margin="0,0,0,14" />
+
+                                <DockPanel Margin="0,0,0,6">
+                                    <TextBlock Text="ENTRÉE" Style="{StaticResource LabelText}" Width="72" />
+                                    <c:SlantMeter Height="20" Value="{Binding InputLevel}" ChargedAbove="0.97" Tone="{StaticResource SurgeBrush}" />
+                                </DockPanel>
+                                <DockPanel Margin="0,4,0,16">
+                                    <TextBlock Text="SORTIE" Style="{StaticResource LabelText}" Width="72" />
+                                    <c:SlantMeter Height="20" Value="{Binding OutputLevel}" ChargedAbove="0.97" Tone="{StaticResource BoostBrush}" />
+                                </DockPanel>
+
+                                <UniformGrid Columns="2">
+                                    <ToggleButton Style="{StaticResource BigToggle}" IsChecked="{Binding Muted}" Tag="{StaticResource HazardBrush}"
+                                                  ToolTip="Ctrl+Alt+M">
+                                        <StackPanel Orientation="Horizontal">
+                                            <TextBlock Style="{StaticResource IconText}" Text="&#xF781;" Margin="0,0,8,2" FontSize="18" />
+                                            <TextBlock Text="MUET" />
+                                        </StackPanel>
+                                    </ToggleButton>
+                                    <ToggleButton Style="{StaticResource BigToggle}" IsChecked="{Binding MonitorOn}" Tag="{StaticResource SurgeBrush}"
+                                                  ToolTip="T'entendre dans ton casque (mets un casque pour éviter le larsen)">
+                                        <StackPanel Orientation="Horizontal">
+                                            <TextBlock Style="{StaticResource IconText}" Text="&#xE7F6;" Margin="0,0,8,2" FontSize="18" />
+                                            <TextBlock Text="M'ÉCOUTER" />
+                                        </StackPanel>
+                                    </ToggleButton>
+                                </UniformGrid>
+                            </StackPanel>
+                        </HeaderedContentControl>
+
+                        <HeaderedContentControl Style="{StaticResource FrostPanel}" Header="RÉGLAGES RAPIDES" Margin="0,20,0,0" Padding="20,16,20,14">
+                            <StackPanel>
+                                <DockPanel>
+                                    <TextBlock DockPanel.Dock="Right" Style="{StaticResource NumText}" Foreground="{StaticResource BlazeBrush}" Text="{Binding Depth, StringFormat='{}{0:P0}'}" />
+                                    <TextBlock Text="VOIX PLUS GRAVE" Style="{StaticResource LabelText}" />
+                                </DockPanel>
+                                <Slider Minimum="0" Maximum="1" Value="{Binding Depth}" SmallChange="0.05" LargeChange="0.1" Tag="{StaticResource BlazeBrush}"
+                                        ToolTip="Plus grave, plus posé, plus de coffre — en restant naturel" Margin="0,0,0,6" />
+
+                                <DockPanel>
+                                    <TextBlock DockPanel.Dock="Right" Style="{StaticResource NumText}" Text="{Binding VolumeDb, StringFormat='{}{0:+0;-0;0} dB'}" />
+                                    <TextBlock Text="VOLUME" Style="{StaticResource LabelText}" />
+                                </DockPanel>
+                                <Slider Minimum="-12" Maximum="20" Value="{Binding VolumeDb}" c:SlantMeter.SliderOrigin="0" SmallChange="1" LargeChange="3" Margin="0,0,0,6" />
+
+                                <DockPanel>
+                                    <TextBlock DockPanel.Dock="Right" Style="{StaticResource NumText}" Text="{Binding PitchSemitones, StringFormat='{}{0:+0;-0;0}'}" />
+                                    <TextBlock Text="GRAVE  ◂  ▸  AIGU" Style="{StaticResource LabelText}" />
+                                </DockPanel>
+                                <Slider Minimum="-12" Maximum="12" Value="{Binding PitchSemitones}" c:SlantMeter.SliderOrigin="0" SmallChange="1" LargeChange="1"
+                                        IsSnapToTickEnabled="True" TickFrequency="1" Tag="{StaticResource SurgeBrush}" Margin="0" />
+                            </StackPanel>
+                        </HeaderedContentControl>
+                    </StackPanel>
+                    </ScrollViewer>
+
+                    <Grid Grid.Column="2">
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="*" />
+                        </Grid.RowDefinitions>
+
+                        <!-- Bandeau : micro virtuel manquant -->
+                        <Border Grid.Row="0" Margin="0,0,0,20" Background="{StaticResource Night800Brush}" BorderBrush="{StaticResource HazardBrush}"
+                                BorderThickness="4,0,0,0" Padding="20,14"
+                                Visibility="{Binding CableFound, Converter={x:Static vm:Converters.InverseBoolToVisibility}}" x:Name="CableBanner">
+                            <DockPanel>
+                                <Button DockPanel.Dock="Right" Style="{StaticResource SmallPrimaryButton}" Content="COMMENT FAIRE" Click="CableBadge_Click" />
+                                <StackPanel>
+                                    <TextBlock Text="MICRO VIRTUEL MANQUANT" Style="{StaticResource DisplayText}" Foreground="{StaticResource HazardBrush}" RenderTransformOrigin="0,0.5" />
+                                    <TextBlock Style="{StaticResource BodyText}" Margin="0,2,0,0"
+                                               Text="Tu peux tester ta voix avec « M'écouter », mais Discord et tes jeux ne l'entendront pas tant que VB-CABLE n'est pas installé (gratuit, 2 minutes)." />
+                                </StackPanel>
+                            </DockPanel>
+                        </Border>
+
+                        <HeaderedContentControl Grid.Row="1" Style="{StaticResource FrostPanel}" Header="CHOISIS TA VOIX" Padding="20,20,6,6">
+                            <HeaderedContentControl.Tag>
+                                <StackPanel Orientation="Horizontal">
+                                    <Border Style="{StaticResource Badge}" Background="{StaticResource BlazeBrush}" Margin="0,0,12,0"
+                                            Visibility="{Binding Modified, Converter={StaticResource BoolToVis}}">
+                                        <TextBlock Text="MODIFIÉ" Style="{StaticResource BadgeText}" />
+                                    </Border>
+                                    <Button Style="{StaticResource SmallGhostButton}" Click="ImportPreset_Click" ToolTip="Ajouter un preset envoyé par un ami (.json)">
+                                        <StackPanel Orientation="Horizontal">
+                                            <TextBlock Style="{StaticResource IconText}" Text="&#xE8B5;" FontSize="14" Margin="0,0,6,2" />
+                                            <TextBlock Text="IMPORTER" />
+                                        </StackPanel>
+                                    </Button>
+                                    <Button Style="{StaticResource SmallPrimaryButton}" Click="SavePreset_Click">
+                                        <StackPanel Orientation="Horizontal">
+                                            <TextBlock Style="{StaticResource IconText}" Text="&#xE74E;" FontSize="14" Margin="0,0,6,2" />
+                                            <TextBlock Text="ENREGISTRER" />
+                                        </StackPanel>
+                                    </Button>
+                                </StackPanel>
+                            </HeaderedContentControl.Tag>
+                            <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="0,0,10,0">
+                                <StackPanel>
+                                    <ItemsControl ItemsSource="{Binding Presets}" ItemTemplate="{StaticResource PresetTile}">
+                                        <ItemsControl.ItemsPanel>
+                                            <ItemsPanelTemplate><c:AutoGrid MinItemWidth="176" /></ItemsPanelTemplate>
+                                        </ItemsControl.ItemsPanel>
+                                    </ItemsControl>
+                                    <StackPanel x:Name="UserPresetsBlock" Visibility="{Binding UserPresets.Count, Converter={x:Static vm:Converters.CountToVisibility}}">
+                                        <TextBlock Text="MES PRESETS" Style="{StaticResource TitleText}" Margin="0,10,0,12" />
+                                        <ItemsControl ItemsSource="{Binding UserPresets}" ItemTemplate="{StaticResource PresetTile}">
+                                            <ItemsControl.ItemsPanel>
+                                                <ItemsPanelTemplate><c:AutoGrid MinItemWidth="176" /></ItemsPanelTemplate>
+                                            </ItemsControl.ItemsPanel>
+                                        </ItemsControl>
+                                        <TextBlock Style="{StaticResource CaptionText}" Margin="0,0,0,10"
+                                                   Text="Clic droit sur un de tes presets pour l'exporter (et l'envoyer à un ami) ou le supprimer." />
+                                    </StackPanel>
+                                </StackPanel>
+                            </ScrollViewer>
+                        </HeaderedContentControl>
+
+                        <!-- Onomatopée BD quand on change de voix -->
+                        <TextBlock x:Name="Onomatopoeia" Grid.Row="1" FontFamily="{StaticResource FontComic}" FontSize="76"
+                                   HorizontalAlignment="Right" VerticalAlignment="Top" Margin="0,-34,30,0"
+                                   IsHitTestVisible="False" Opacity="0" RenderTransformOrigin="0.5,0.5">
+                            <TextBlock.Foreground>
+                                <LinearGradientBrush StartPoint="0,0" EndPoint="0,1">
+                                    <GradientStop Color="{StaticResource Volt500}" Offset="0.2" />
+                                    <GradientStop Color="{StaticResource Blaze500}" Offset="0.95" />
+                                </LinearGradientBrush>
+                            </TextBlock.Foreground>
+                            <TextBlock.Effect>
+                                <DropShadowEffect Color="{StaticResource Night950}" BlurRadius="0" ShadowDepth="6" Direction="315" Opacity="1" />
+                            </TextBlock.Effect>
+                            <TextBlock.RenderTransform>
+                                <TransformGroup>
+                                    <ScaleTransform x:Name="OnoScale" ScaleX="1" ScaleY="1" />
+                                    <RotateTransform x:Name="OnoRotate" Angle="-8" />
+                                </TransformGroup>
+                            </TextBlock.RenderTransform>
+                        </TextBlock>
+                    </Grid>
+                </Grid>
+
+                <!-- ========== PAGE EFFETS ========== -->
+                <HeaderedContentControl x:Name="PageEffects" Style="{StaticResource FrostPanel}" Header="EFFETS" Visibility="Collapsed" Padding="20,20,6,10">
+                    <HeaderedContentControl.Tag>
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Style="{StaticResource CaptionText}" VerticalAlignment="Center" Margin="0,0,14,0">
+                                <Run Text="Voix de base :" /> <Run Text="{Binding CurrentPresetName, Mode=OneWay}" Foreground="{StaticResource VoltBrush}" />
+                            </TextBlock>
+                            <Button Style="{StaticResource SmallPrimaryButton}" Content="ENREGISTRER" Click="SavePreset_Click" />
+                        </StackPanel>
+                    </HeaderedContentControl.Tag>
+                    <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="0,0,14,0">
+                        <StackPanel>
+                            <StackPanel.Resources>
+                                <Style x:Key="ParamLabel" TargetType="TextBlock" BasedOn="{StaticResource CaptionText}">
+                                    <Setter Property="Foreground" Value="{StaticResource Violet100Brush}" />
+                                </Style>
+                            </StackPanel.Resources>
+
+                            <!-- Anti-bruit -->
+                            <Border Style="{StaticResource EffectRow}" Tag="{Binding ElementName=SwGate}">
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="100" /><ColumnDefinition Width="*" /><ColumnDefinition Width="440" />
+                                    </Grid.ColumnDefinitions>
+                                    <ToggleButton x:Name="SwGate" Style="{StaticResource SlantSwitch}" IsChecked="{Binding GateOn}" HorizontalAlignment="Left" />
+                                    <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                                        <TextBlock Text="ANTI-BRUIT" Style="{StaticResource EffectTitle}" />
+                                        <TextBlock Style="{StaticResource CaptionText}" Text="Coupe le clavier, le ventilo et le bruit de fond quand tu ne parles pas." TextWrapping="Wrap" />
+                                    </StackPanel>
+                                    <StackPanel Grid.Column="2" VerticalAlignment="Center">
+                                        <DockPanel>
+                                            <TextBlock DockPanel.Dock="Right" Style="{StaticResource NumText}" FontSize="16" Text="{Binding GateThresholdDb, StringFormat='{}{0} dB'}" />
+                                            <TextBlock Text="Sensibilité (plus à droite = coupe plus)" Style="{StaticResource ParamLabel}" />
+                                        </DockPanel>
+                                        <Slider Minimum="-80" Maximum="-20" Value="{Binding GateThresholdDb}" Tag="{StaticResource BoostBrush}" />
+                                    </StackPanel>
+                                </Grid>
+                            </Border>
+
+                            <!-- Égaliseur -->
+                            <Border Style="{StaticResource EffectRow}" Tag="{Binding ElementName=SwEq}">
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="100" /><ColumnDefinition Width="*" /><ColumnDefinition Width="440" />
+                                    </Grid.ColumnDefinitions>
+                                    <ToggleButton x:Name="SwEq" Style="{StaticResource SlantSwitch}" IsChecked="{Binding EqOn}" HorizontalAlignment="Left" />
+                                    <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                                        <TextBlock Text="ÉGALISEUR" Style="{StaticResource EffectTitle}" />
+                                        <TextBlock Style="{StaticResource CaptionText}" Text="Plus de basses pour une voix chaude, plus d'aigus pour une voix claire." TextWrapping="Wrap" />
+                                    </StackPanel>
+                                    <UniformGrid Grid.Column="2" Columns="3">
+                                        <StackPanel Margin="0,0,8,0">
+                                            <DockPanel>
+                                                <TextBlock DockPanel.Dock="Right" Style="{StaticResource NumText}" FontSize="16" Text="{Binding EqLowDb, StringFormat='{}{0:+0;-0;0}'}" />
+                                                <TextBlock Text="Basses" Style="{StaticResource ParamLabel}" />
+                                            </DockPanel>
+                                            <Slider Minimum="-12" Maximum="12" Value="{Binding EqLowDb}" c:SlantMeter.SliderOrigin="0" />
+                                        </StackPanel>
+                                        <StackPanel Margin="4,0">
+                                            <DockPanel>
+                                                <TextBlock DockPanel.Dock="Right" Style="{StaticResource NumText}" FontSize="16" Text="{Binding EqMidDb, StringFormat='{}{0:+0;-0;0}'}" />
+                                                <TextBlock Text="Médiums" Style="{StaticResource ParamLabel}" />
+                                            </DockPanel>
+                                            <Slider Minimum="-12" Maximum="12" Value="{Binding EqMidDb}" c:SlantMeter.SliderOrigin="0" />
+                                        </StackPanel>
+                                        <StackPanel Margin="8,0,0,0">
+                                            <DockPanel>
+                                                <TextBlock DockPanel.Dock="Right" Style="{StaticResource NumText}" FontSize="16" Text="{Binding EqHighDb, StringFormat='{}{0:+0;-0;0}'}" />
+                                                <TextBlock Text="Aigus" Style="{StaticResource ParamLabel}" />
+                                            </DockPanel>
+                                            <Slider Minimum="-12" Maximum="12" Value="{Binding EqHighDb}" c:SlantMeter.SliderOrigin="0" />
+                                        </StackPanel>
+                                    </UniformGrid>
+                                </Grid>
+                            </Border>
+
+                            <!-- Compresseur -->
+                            <Border Style="{StaticResource EffectRow}" Tag="{Binding ElementName=SwComp}">
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="100" /><ColumnDefinition Width="*" /><ColumnDefinition Width="440" />
+                                    </Grid.ColumnDefinitions>
+                                    <ToggleButton x:Name="SwComp" Style="{StaticResource SlantSwitch}" IsChecked="{Binding CompressorOn}" HorizontalAlignment="Left" />
+                                    <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                                        <TextBlock Text="VOIX PRO" Style="{StaticResource EffectTitle}" />
+                                        <TextBlock Style="{StaticResource CaptionText}" Text="Compresseur : volume plus régulier, voix plus présente comme à la radio." TextWrapping="Wrap" />
+                                    </StackPanel>
+                                    <StackPanel Grid.Column="2" VerticalAlignment="Center">
+                                        <DockPanel>
+                                            <TextBlock DockPanel.Dock="Right" Style="{StaticResource NumText}" FontSize="16" Text="{Binding CompressorAmount, StringFormat='{}{0:P0}'}" />
+                                            <TextBlock Text="Intensité" Style="{StaticResource ParamLabel}" />
+                                        </DockPanel>
+                                        <Slider Minimum="0" Maximum="1" Value="{Binding CompressorAmount}" />
+                                    </StackPanel>
+                                </Grid>
+                            </Border>
+
+                            <!-- Robot / alien -->
+                            <Border Style="{StaticResource EffectRow}" Tag="{Binding ElementName=SwRobot}">
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="100" /><ColumnDefinition Width="*" /><ColumnDefinition Width="440" />
+                                    </Grid.ColumnDefinitions>
+                                    <ToggleButton x:Name="SwRobot" Style="{StaticResource SlantSwitch}" IsChecked="{Binding RobotOn}" HorizontalAlignment="Left" />
+                                    <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                                        <TextBlock Text="ROBOT · ALIEN" Style="{StaticResource EffectTitle}" />
+                                        <TextBlock Style="{StaticResource CaptionText}" Text="Fréquence basse = robot, fréquence haute = alien." TextWrapping="Wrap" />
+                                    </StackPanel>
+                                    <UniformGrid Grid.Column="2" Columns="2">
+                                        <StackPanel Margin="0,0,8,0">
+                                            <DockPanel>
+                                                <TextBlock DockPanel.Dock="Right" Style="{StaticResource NumText}" FontSize="16" Text="{Binding RobotFrequency, StringFormat='{}{0} Hz'}" />
+                                                <TextBlock Text="Fréquence" Style="{StaticResource ParamLabel}" />
+                                            </DockPanel>
+                                            <Slider Minimum="20" Maximum="800" Value="{Binding RobotFrequency}" Tag="{StaticResource SurgeBrush}" />
+                                        </StackPanel>
+                                        <StackPanel Margin="8,0,0,0">
+                                            <DockPanel>
+                                                <TextBlock DockPanel.Dock="Right" Style="{StaticResource NumText}" FontSize="16" Text="{Binding RobotMix, StringFormat='{}{0:P0}'}" />
+                                                <TextBlock Text="Dosage" Style="{StaticResource ParamLabel}" />
+                                            </DockPanel>
+                                            <Slider Minimum="0" Maximum="1" Value="{Binding RobotMix}" Tag="{StaticResource SurgeBrush}" />
+                                        </StackPanel>
+                                    </UniformGrid>
+                                </Grid>
+                            </Border>
+
+                            <!-- Distorsion -->
+                            <Border Style="{StaticResource EffectRow}" Tag="{Binding ElementName=SwDist}">
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="100" /><ColumnDefinition Width="*" /><ColumnDefinition Width="440" />
+                                    </Grid.ColumnDefinitions>
+                                    <ToggleButton x:Name="SwDist" Style="{StaticResource SlantSwitch}" IsChecked="{Binding DistortionOn}" HorizontalAlignment="Left" />
+                                    <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                                        <TextBlock Text="DISTORSION" Style="{StaticResource EffectTitle}" />
+                                        <TextBlock Style="{StaticResource CaptionText}" Text="Voix saturée, façon démon ou mégaphone." TextWrapping="Wrap" />
+                                    </StackPanel>
+                                    <StackPanel Grid.Column="2" VerticalAlignment="Center">
+                                        <DockPanel>
+                                            <TextBlock DockPanel.Dock="Right" Style="{StaticResource NumText}" FontSize="16" Text="{Binding DistortionDrive, StringFormat='{}{0:P0}'}" />
+                                            <TextBlock Text="Force" Style="{StaticResource ParamLabel}" />
+                                        </DockPanel>
+                                        <Slider Minimum="0" Maximum="1" Value="{Binding DistortionDrive}" Tag="{StaticResource HazardBrush}" />
+                                    </StackPanel>
+                                </Grid>
+                            </Border>
+
+                            <!-- Radio -->
+                            <Border Style="{StaticResource EffectRow}" Tag="{Binding ElementName=SwRadio}">
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="100" /><ColumnDefinition Width="*" />
+                                    </Grid.ColumnDefinitions>
+                                    <ToggleButton x:Name="SwRadio" Style="{StaticResource SlantSwitch}" IsChecked="{Binding RadioOn}" HorizontalAlignment="Left" />
+                                    <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                                        <TextBlock Text="RADIO · TALKIE" Style="{StaticResource EffectTitle}" />
+                                        <TextBlock Style="{StaticResource CaptionText}" Text="Son de talkie-walkie ou de vieille radio." />
+                                    </StackPanel>
+                                </Grid>
+                            </Border>
+
+                            <!-- Écho -->
+                            <Border Style="{StaticResource EffectRow}" Tag="{Binding ElementName=SwEcho}">
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="100" /><ColumnDefinition Width="*" /><ColumnDefinition Width="440" />
+                                    </Grid.ColumnDefinitions>
+                                    <ToggleButton x:Name="SwEcho" Style="{StaticResource SlantSwitch}" IsChecked="{Binding EchoOn}" HorizontalAlignment="Left" />
+                                    <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                                        <TextBlock Text="ÉCHO" Style="{StaticResource EffectTitle}" />
+                                        <TextBlock Style="{StaticResource CaptionText}" Text="Ta voix se répète… se répète…" TextWrapping="Wrap" />
+                                    </StackPanel>
+                                    <UniformGrid Grid.Column="2" Columns="3">
+                                        <StackPanel Margin="0,0,8,0">
+                                            <DockPanel>
+                                                <TextBlock DockPanel.Dock="Right" Style="{StaticResource NumText}" FontSize="16" Text="{Binding EchoTimeMs, StringFormat='{}{0} ms'}" />
+                                                <TextBlock Text="Délai" Style="{StaticResource ParamLabel}" />
+                                            </DockPanel>
+                                            <Slider Minimum="40" Maximum="1000" Value="{Binding EchoTimeMs}" Tag="{StaticResource NeonBrush}" />
+                                        </StackPanel>
+                                        <StackPanel Margin="4,0">
+                                            <DockPanel>
+                                                <TextBlock DockPanel.Dock="Right" Style="{StaticResource NumText}" FontSize="16" Text="{Binding EchoFeedback, StringFormat='{}{0:P0}'}" />
+                                                <TextBlock Text="Répétitions" Style="{StaticResource ParamLabel}" />
+                                            </DockPanel>
+                                            <Slider Minimum="0" Maximum="0.9" Value="{Binding EchoFeedback}" Tag="{StaticResource NeonBrush}" />
+                                        </StackPanel>
+                                        <StackPanel Margin="8,0,0,0">
+                                            <DockPanel>
+                                                <TextBlock DockPanel.Dock="Right" Style="{StaticResource NumText}" FontSize="16" Text="{Binding EchoMix, StringFormat='{}{0:P0}'}" />
+                                                <TextBlock Text="Volume" Style="{StaticResource ParamLabel}" />
+                                            </DockPanel>
+                                            <Slider Minimum="0" Maximum="1" Value="{Binding EchoMix}" Tag="{StaticResource NeonBrush}" />
+                                        </StackPanel>
+                                    </UniformGrid>
+                                </Grid>
+                            </Border>
+
+                            <!-- Réverb -->
+                            <Border Style="{StaticResource EffectRow}" Tag="{Binding ElementName=SwReverb}">
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="100" /><ColumnDefinition Width="*" /><ColumnDefinition Width="440" />
+                                    </Grid.ColumnDefinitions>
+                                    <ToggleButton x:Name="SwReverb" Style="{StaticResource SlantSwitch}" IsChecked="{Binding ReverbOn}" HorizontalAlignment="Left" />
+                                    <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                                        <TextBlock Text="RÉVERB" Style="{StaticResource EffectTitle}" />
+                                        <TextBlock Style="{StaticResource CaptionText}" Text="Comme si tu parlais dans une grande salle." TextWrapping="Wrap" />
+                                    </StackPanel>
+                                    <UniformGrid Grid.Column="2" Columns="2">
+                                        <StackPanel Margin="0,0,8,0">
+                                            <DockPanel>
+                                                <TextBlock DockPanel.Dock="Right" Style="{StaticResource NumText}" FontSize="16" Text="{Binding ReverbSize, StringFormat='{}{0:P0}'}" />
+                                                <TextBlock Text="Taille de la salle" Style="{StaticResource ParamLabel}" />
+                                            </DockPanel>
+                                            <Slider Minimum="0" Maximum="1" Value="{Binding ReverbSize}" Tag="{StaticResource SurgeBrush}" />
+                                        </StackPanel>
+                                        <StackPanel Margin="8,0,0,0">
+                                            <DockPanel>
+                                                <TextBlock DockPanel.Dock="Right" Style="{StaticResource NumText}" FontSize="16" Text="{Binding ReverbMix, StringFormat='{}{0:P0}'}" />
+                                                <TextBlock Text="Volume" Style="{StaticResource ParamLabel}" />
+                                            </DockPanel>
+                                            <Slider Minimum="0" Maximum="1" Value="{Binding ReverbMix}" Tag="{StaticResource SurgeBrush}" />
+                                        </StackPanel>
+                                    </UniformGrid>
+                                </Grid>
+                            </Border>
+                        </StackPanel>
+                    </ScrollViewer>
+                </HeaderedContentControl>
+
+                <!-- ========== PAGE SOUNDBOARD ========== -->
+                <HeaderedContentControl x:Name="PageSounds" Style="{StaticResource FrostPanel}" Header="SOUNDBOARD" Visibility="Collapsed" Padding="20,20,6,10">
+                    <HeaderedContentControl.Tag>
+                        <StackPanel Orientation="Horizontal">
+                            <Button Style="{StaticResource SmallGhostButton}" Click="StopSounds_Click" ToolTip="Ctrl+Alt+0">
+                                <StackPanel Orientation="Horizontal">
+                                    <TextBlock Style="{StaticResource IconText}" Text="&#xE71A;" FontSize="13" Margin="0,0,6,2" />
+                                    <TextBlock Text="STOP" />
+                                </StackPanel>
+                            </Button>
+                            <Button Style="{StaticResource SmallPrimaryButton}" Click="AddSounds_Click">
+                                <StackPanel Orientation="Horizontal">
+                                    <TextBlock Style="{StaticResource IconText}" Text="&#xE710;" FontSize="13" Margin="0,0,6,2" />
+                                    <TextBlock Text="AJOUTER DES SONS" />
+                                </StackPanel>
+                            </Button>
+                        </StackPanel>
+                    </HeaderedContentControl.Tag>
+                    <DockPanel>
+                        <Grid DockPanel.Dock="Top" Margin="0,0,14,18">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto" /><ColumnDefinition Width="320" /><ColumnDefinition Width="Auto" /><ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Text="VOLUME DES SONS" Style="{StaticResource LabelText}" VerticalAlignment="Center" Margin="0,0,16,0" />
+                            <Slider Grid.Column="1" Minimum="-30" Maximum="6" Value="{Binding SoundVolumeDb}" Tag="{StaticResource BlazeBrush}" />
+                            <TextBlock Grid.Column="2" Style="{StaticResource NumText}" Text="{Binding SoundVolumeDb, StringFormat='{}{0:+0;-0;0} dB'}" VerticalAlignment="Center" Margin="10,0,30,0" />
+                            <StackPanel Grid.Column="3" Orientation="Horizontal" VerticalAlignment="Center">
+                                <ToggleButton Style="{StaticResource SlantSwitch}" IsChecked="{Binding SoundsToMonitor}" />
+                                <TextBlock Text="Les entendre aussi dans mon casque" Style="{StaticResource BodyText}" VerticalAlignment="Center" Margin="12,3,0,0" />
+                            </StackPanel>
+                        </Grid>
+
+                        <Grid>
+                            <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="0,0,10,0">
+                                <ItemsControl ItemsSource="{Binding Sounds}">
+                                    <ItemsControl.ItemsPanel>
+                                        <ItemsPanelTemplate><c:AutoGrid MinItemWidth="210" /></ItemsPanelTemplate>
+                                    </ItemsControl.ItemsPanel>
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate DataType="{x:Type vm:SoundItem}">
+                                            <Grid Height="104" Margin="0,0,14,14">
+                                                <Button Click="PlaySound_Click" Tag="{Binding}" Cursor="Hand" Focusable="False">
+                                                    <Button.Template>
+                                                        <ControlTemplate TargetType="Button">
+                                                            <Border x:Name="slot" Background="{StaticResource SlotBrush}" BorderBrush="{StaticResource SlotInnerBrush}" BorderThickness="5" CornerRadius="2" ClipToBounds="True">
+                                                                <Grid>
+                                                                    <Border Width="56" HorizontalAlignment="Left" Margin="-26,-10,0,-10" Background="{Binding ToneBrush}"
+                                                                            RenderTransformOrigin="0.5,0.5" RenderTransform="{StaticResource Slant}" />
+                                                                    <TextBlock Text="&#xE768;" Style="{StaticResource IconText}" FontSize="20" Foreground="{StaticResource Night900Brush}" Margin="4,0,0,0" HorizontalAlignment="Left" />
+                                                                    <StackPanel Margin="46,12,12,8">
+                                                                        <TextBlock Text="{Binding Name}" FontFamily="{StaticResource FontDisplay}" FontSize="21" TextTrimming="CharacterEllipsis"
+                                                                                   Foreground="{StaticResource PaperBrush}" RenderTransformOrigin="0,0.5" RenderTransform="{StaticResource SlantSoft}" />
+                                                                        <Border Style="{StaticResource KeyChip}" HorizontalAlignment="Left" Margin="0,8,0,0"
+                                                                                Visibility="{Binding Hotkey, Converter={x:Static vm:Converters.NotEmptyToVisibility}}">
+                                                                            <TextBlock Text="{Binding Hotkey}" FontFamily="{StaticResource FontUiBold}" FontSize="12" />
+                                                                        </Border>
+                                                                    </StackPanel>
+                                                                </Grid>
+                                                            </Border>
+                                                            <ControlTemplate.Triggers>
+                                                                <Trigger Property="IsMouseOver" Value="True">
+                                                                    <Setter TargetName="slot" Property="BorderBrush" Value="{StaticResource VoltBrush}" />
+                                                                </Trigger>
+                                                                <Trigger Property="IsPressed" Value="True">
+                                                                    <Setter TargetName="slot" Property="Margin" Value="1,1,-1,-1" />
+                                                                </Trigger>
+                                                            </ControlTemplate.Triggers>
+                                                        </ControlTemplate>
+                                                    </Button.Template>
+                                                </Button>
+                                                <Button HorizontalAlignment="Right" VerticalAlignment="Top" Width="28" Height="28" Margin="0,6,6,0"
+                                                        Click="RemoveSound_Click" Tag="{Binding}" ToolTip="Retirer" Cursor="Hand" Focusable="False">
+                                                    <Button.Template>
+                                                        <ControlTemplate TargetType="Button">
+                                                            <Border x:Name="b" Background="Transparent">
+                                                                <TextBlock Text="&#xE711;" Style="{StaticResource IconText}" FontSize="11" HorizontalAlignment="Center" Foreground="{StaticResource Violet200Brush}" />
+                                                            </Border>
+                                                            <ControlTemplate.Triggers>
+                                                                <Trigger Property="IsMouseOver" Value="True">
+                                                                    <Setter TargetName="b" Property="Background" Value="{StaticResource HazardBrush}" />
+                                                                </Trigger>
+                                                            </ControlTemplate.Triggers>
+                                                        </ControlTemplate>
+                                                    </Button.Template>
+                                                </Button>
+                                            </Grid>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                            </ScrollViewer>
+
+                            <!-- État vide -->
+                            <Border x:Name="SoundsEmpty" Visibility="{Binding Sounds.Count, Converter={x:Static vm:Converters.ZeroToVisibility}}" BorderBrush="{StaticResource Violet400Brush}" BorderThickness="3" Margin="0,0,14,10" CornerRadius="2">
+                                <Border.Background>
+                                    <LinearGradientBrush StartPoint="0,0" EndPoint="20,20" MappingMode="Absolute" SpreadMethod="Repeat">
+                                        <GradientStop Color="#336B5FD0" Offset="0" />
+                                        <GradientStop Color="#336B5FD0" Offset="0.5" />
+                                        <GradientStop Color="#1A4A3FB0" Offset="0.5" />
+                                        <GradientStop Color="#1A4A3FB0" Offset="1" />
+                                    </LinearGradientBrush>
+                                </Border.Background>
+                                <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center">
+                                    <TextBlock Text="&#xE8D6;" Style="{StaticResource IconText}" FontSize="40" HorizontalAlignment="Center" Foreground="{StaticResource Violet200Brush}" />
+                                    <TextBlock Text="GLISSE TES SONS ICI" Style="{StaticResource DisplayText}" FontSize="30" HorizontalAlignment="Center" Margin="0,12,0,4" />
+                                    <TextBlock Text="mp3, wav, ogg… Ils seront joués dans ton micro. Raccourcis Ctrl+Alt+1 à 9." Style="{StaticResource BodyText}" HorizontalAlignment="Center" />
+                                </StackPanel>
+                            </Border>
+                        </Grid>
+                    </DockPanel>
+                </HeaderedContentControl>
+
+                <!-- ========== PAGE RÉGLAGES ========== -->
+                <ScrollViewer x:Name="PageSettings" Visibility="Collapsed" VerticalScrollBarVisibility="Auto" Padding="0,0,8,0">
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" /><ColumnDefinition Width="28" /><ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+
+                        <StackPanel>
+                            <HeaderedContentControl Style="{StaticResource FrostPanel}" Header="MICRO VIRTUEL">
+                                <StackPanel>
+                                    <!-- Absent -->
+                                    <StackPanel x:Name="CableMissingHelp" Visibility="{Binding CableFound, Converter={x:Static vm:Converters.InverseBoolToVisibility}}">
+                                        <TextBlock Style="{StaticResource BodyText}" Margin="0,0,0,14"
+                                                   Text="Pour que Discord et tes jeux entendent ta voix modifiée, Windows a besoin d'un « micro virtuel ». On utilise VB-CABLE : gratuit, léger, et il n'ajoute que 2 entrées dans tes paramètres son (pas 10 comme Voicemeeter)." />
+                                        <TextBlock Text="1 · Télécharge VB-CABLE (bouton ci-dessous)" Style="{StaticResource LabelText}" Margin="0,0,0,6" />
+                                        <TextBlock Text="2 · Dézippe, clic droit sur VBCABLE_Setup_x64.exe → Exécuter en tant qu'administrateur → Install Driver" Style="{StaticResource LabelText}" TextWrapping="Wrap" Margin="0,0,0,6" />
+                                        <TextBlock Text="3 · Redémarre le PC, puis relance se7en Voice" Style="{StaticResource LabelText}" Margin="0,0,0,18" />
+                                        <WrapPanel>
+                                            <Button Style="{StaticResource PrimaryButton}" Click="DownloadCable_Click">
+                                                <StackPanel Orientation="Horizontal">
+                                                    <TextBlock Style="{StaticResource IconText}" Text="&#xE896;" Margin="0,0,8,2" />
+                                                    <TextBlock Text="TÉLÉCHARGER VB-CABLE" />
+                                                </StackPanel>
+                                            </Button>
+                                            <Button Style="{StaticResource GhostButton}" Content="VÉRIFIER" Click="CheckCable_Click" />
+                                        </WrapPanel>
+                                    </StackPanel>
+                                    <!-- Présent -->
+                                    <StackPanel x:Name="CableOkHelp" Visibility="{Binding CableFound, Converter={x:Static vm:Converters.BoolToVisibility}}">
+                                        <StackPanel Orientation="Horizontal" Margin="0,0,0,12">
+                                            <Border Style="{StaticResource Badge}" Background="{StaticResource BoostBrush}">
+                                                <TextBlock Text="INSTALLÉ" Style="{StaticResource BadgeText}" />
+                                            </Border>
+                                            <TextBlock Text="{Binding CableName}" Style="{StaticResource LabelText}" Margin="14,0,0,0" VerticalAlignment="Center" />
+                                        </StackPanel>
+                                        <TextBlock Style="{StaticResource BodyText}" Margin="0,0,0,10">
+                                            <Run Text="Dans Discord : Paramètres → Voix et vidéo → Périphérique d'entrée → choisis" />
+                                            <Run Text="{Binding CableName, Mode=OneWay}" Foreground="{StaticResource VoltBrush}" FontFamily="{StaticResource FontUiBold}" /><Run Text="." />
+                                        </TextBlock>
+                                        <TextBlock Style="{StaticResource BodyText}" Margin="0,0,0,16"
+                                                   Text="Pareil dans tes jeux (Fortnite, Valorant…). Pour tout le PC, fais-en le micro par défaut : Paramètres Windows → Son → Entrée." />
+                                        <StackPanel x:Name="RenameBlock" Visibility="{Binding CableRenamed, Converter={x:Static vm:Converters.InverseBoolToVisibility}}">
+                                            <TextBlock Style="{StaticResource BodyText}" Margin="0,0,0,12" Foreground="{StaticResource Violet200Brush}"
+                                                       Text="Astuce : renomme les 2 entrées de VB-CABLE en « se7en Voice » pour les retrouver facilement (Windows te demandera l'autorisation)." />
+                                            <Button Style="{StaticResource GhostButton}" HorizontalAlignment="Left" Click="RenameCable_Click">
+                                                <StackPanel Orientation="Horizontal">
+                                                    <TextBlock Style="{StaticResource IconText}" Text="&#xE8AC;" Margin="0,0,8,2" />
+                                                    <TextBlock Text="RENOMMER EN « SE7EN VOICE »" />
+                                                </StackPanel>
+                                            </Button>
+                                        </StackPanel>
+                                    </StackPanel>
+                                </StackPanel>
+                            </HeaderedContentControl>
+
+                            <HeaderedContentControl Style="{StaticResource FrostPanel}" Header="PÉRIPHÉRIQUES" Margin="0,24,0,0">
+                                <StackPanel>
+                                    <TextBlock Text="MON VRAI MICRO" Style="{StaticResource LabelText}" Margin="0,0,0,8" />
+                                    <ComboBox ItemsSource="{Binding Microphones}" SelectedValue="{Binding SelectedMicrophone}" Margin="0,0,0,18" />
+                                    <TextBlock Text="MON CASQUE (POUR M'ÉCOUTER)" Style="{StaticResource LabelText}" Margin="0,0,0,8" />
+                                    <ComboBox ItemsSource="{Binding Speakers}" SelectedValue="{Binding SelectedMonitor}" />
+                                </StackPanel>
+                            </HeaderedContentControl>
+                        </StackPanel>
+
+                        <StackPanel Grid.Column="2">
+                            <HeaderedContentControl Style="{StaticResource FrostPanel}" Header="APPLICATION">
+                                <StackPanel>
+                                    <DockPanel Margin="0,0,0,14">
+                                        <ToggleButton DockPanel.Dock="Right" Style="{StaticResource SlantSwitch}" IsChecked="{Binding StartWithWindows}" />
+                                        <StackPanel>
+                                            <TextBlock Text="LANCER AU DÉMARRAGE DE WINDOWS" Style="{StaticResource LabelText}" />
+                                            <TextBlock Text="Ta voix est prête dès que tu allumes le PC." Style="{StaticResource CaptionText}" />
+                                        </StackPanel>
+                                    </DockPanel>
+                                    <DockPanel>
+                                        <ToggleButton DockPanel.Dock="Right" Style="{StaticResource SlantSwitch}" IsChecked="{Binding MinimizeToTray}" />
+                                        <StackPanel>
+                                            <TextBlock Text="RESTER ACTIF QUAND JE FERME" Style="{StaticResource LabelText}" />
+                                            <TextBlock Text="La croix cache l'app près de l'horloge au lieu de la quitter." Style="{StaticResource CaptionText}" />
+                                        </StackPanel>
+                                    </DockPanel>
+                                </StackPanel>
+                            </HeaderedContentControl>
+
+                            <HeaderedContentControl Style="{StaticResource FrostPanel}" Header="RACCOURCIS (MÊME EN JEU)" Margin="0,24,0,0">
+                                <StackPanel>
+                                    <StackPanel.Resources>
+                                        <Style TargetType="DockPanel">
+                                            <Setter Property="Margin" Value="0,0,0,12" />
+                                        </Style>
+                                    </StackPanel.Resources>
+                                    <DockPanel>
+                                        <Border Style="{StaticResource KeyChip}" Width="150"><TextBlock Text="CTRL + ALT + M" FontFamily="{StaticResource FontUiBold}" /></Border>
+                                        <TextBlock Text="Couper / remettre le micro" Style="{StaticResource BodyText}" VerticalAlignment="Center" />
+                                    </DockPanel>
+                                    <DockPanel>
+                                        <Border Style="{StaticResource KeyChip}" Width="150"><TextBlock Text="CTRL + ALT + →" FontFamily="{StaticResource FontUiBold}" /></Border>
+                                        <TextBlock Text="Voix suivante" Style="{StaticResource BodyText}" VerticalAlignment="Center" />
+                                    </DockPanel>
+                                    <DockPanel>
+                                        <Border Style="{StaticResource KeyChip}" Width="150"><TextBlock Text="CTRL + ALT + ←" FontFamily="{StaticResource FontUiBold}" /></Border>
+                                        <TextBlock Text="Voix précédente" Style="{StaticResource BodyText}" VerticalAlignment="Center" />
+                                    </DockPanel>
+                                    <DockPanel>
+                                        <Border Style="{StaticResource KeyChip}" Width="150"><TextBlock Text="CTRL + ALT + N" FontFamily="{StaticResource FontUiBold}" /></Border>
+                                        <TextBlock Text="Revenir à ma voix normale" Style="{StaticResource BodyText}" VerticalAlignment="Center" />
+                                    </DockPanel>
+                                    <DockPanel>
+                                        <Border Style="{StaticResource KeyChip}" Width="150"><TextBlock Text="CTRL + ALT + 1…9" FontFamily="{StaticResource FontUiBold}" /></Border>
+                                        <TextBlock Text="Jouer un son de la soundboard" Style="{StaticResource BodyText}" VerticalAlignment="Center" />
+                                    </DockPanel>
+                                    <DockPanel Margin="0">
+                                        <Border Style="{StaticResource KeyChip}" Width="150"><TextBlock Text="CTRL + ALT + 0" FontFamily="{StaticResource FontUiBold}" /></Border>
+                                        <TextBlock Text="Arrêter tous les sons" Style="{StaticResource BodyText}" VerticalAlignment="Center" />
+                                    </DockPanel>
+                                </StackPanel>
+                            </HeaderedContentControl>
+                        </StackPanel>
+                    </Grid>
+                </ScrollViewer>
+            </Grid>
+
+            <!-- ===== Barre du bas : statut + prompts ===== -->
+            <Grid Grid.Row="2" Margin="32,0,32,0">
+                <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                    <Grid Width="26" Height="26" Margin="0,0,12,0">
+                        <Ellipse x:Name="LiveDot">
+                            <Ellipse.Style>
+                                <Style TargetType="Ellipse">
+                                    <Setter Property="Fill" Value="{StaticResource HazardBrush}" />
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding Live}" Value="True">
+                                            <Setter Property="Fill" Value="{StaticResource BoostBrush}" />
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </Ellipse.Style>
+                        </Ellipse>
+                        <Ellipse Stroke="{StaticResource PaperBrush}" StrokeThickness="2" Margin="-4" Opacity="0.35" />
+                    </Grid>
+                    <TextBlock Text="{Binding Status}" Style="{StaticResource TitleText}" FontSize="17" VerticalAlignment="Center" />
+                    <TextBlock Style="{StaticResource CaptionText}" VerticalAlignment="Center" Margin="16,0,0,0">
+                        <Run Text="·" /> <Run Text="{Binding CurrentPresetName, Mode=OneWay}" Foreground="{StaticResource VoltBrush}" />
+                    </TextBlock>
+                </StackPanel>
+
+                <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
+                    <Border Style="{StaticResource KeyChip}"><TextBlock Text="CTRL+ALT+M" FontFamily="{StaticResource FontUiBold}" FontSize="12" /></Border>
+                    <TextBlock Text="MUET" Style="{StaticResource LabelText}" FontSize="14" VerticalAlignment="Center" Margin="0,0,22,0" />
+                    <Border Style="{StaticResource KeyChip}"><TextBlock Text="CTRL+ALT+→" FontFamily="{StaticResource FontUiBold}" FontSize="12" /></Border>
+                    <TextBlock Text="VOIX SUIVANTE" Style="{StaticResource LabelText}" FontSize="14" VerticalAlignment="Center" />
+                </StackPanel>
+            </Grid>
+        </Grid>
+
+        <!-- ===== Notification (toast) ===== -->
+        <Border x:Name="Toast" HorizontalAlignment="Center" VerticalAlignment="Bottom" Margin="0,0,0,74" Padding="22,14,22,10"
+                Background="{StaticResource Night700Brush}" BorderBrush="{StaticResource VoltBrush}" BorderThickness="4,0,0,0"
+                MaxWidth="640" Opacity="0" IsHitTestVisible="False">
+            <Border.Effect>
+                <DropShadowEffect Color="{StaticResource Night950}" BlurRadius="0" ShadowDepth="6" Direction="315" />
+            </Border.Effect>
+            <TextBlock x:Name="ToastText" Style="{StaticResource BodyText}" Foreground="{StaticResource PaperBrush}" FontSize="16" />
+        </Border>
+
+        <!-- ===== Boîte « Enregistrer le preset » ===== -->
+        <Grid x:Name="SaveDialog" Visibility="Collapsed" Background="#B307061A">
+            <HeaderedContentControl Style="{StaticResource FrostPanel}" Header="ENREGISTRER LA VOIX" Width="480" VerticalAlignment="Center" HorizontalAlignment="Center">
+                <HeaderedContentControl.Template>
+                    <ControlTemplate TargetType="HeaderedContentControl">
+                        <Border Background="#5A50A8" BorderBrush="{StaticResource PanelBorderBrush}" BorderThickness="1" CornerRadius="4">
+                            <Border.Effect>
+                                <DropShadowEffect Color="{StaticResource Night950}" BlurRadius="0" ShadowDepth="8" Direction="315" />
+                            </Border.Effect>
+                            <DockPanel>
+                                <Border DockPanel.Dock="Top" Background="{StaticResource PanelHeaderBrush}" MinHeight="52" Padding="22,6,8,6">
+                                    <TextBlock Text="{TemplateBinding Header}" FontFamily="{StaticResource FontUiBold}" FontSize="22" VerticalAlignment="Center" Padding="0,5,0,0" />
+                                </Border>
+                                <ContentPresenter Margin="22" />
+                            </DockPanel>
+                        </Border>
+                    </ControlTemplate>
+                </HeaderedContentControl.Template>
+                <StackPanel>
+                    <TextBlock Text="NOM DU PRESET" Style="{StaticResource LabelText}" Margin="0,0,0,8" />
+                    <TextBox x:Name="PresetNameBox" KeyDown="PresetNameBox_KeyDown" MaxLength="28" />
+                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,22,0,0">
+                        <Button Style="{StaticResource GhostButton}" Content="ANNULER" Click="CancelSave_Click" />
+                        <Button Style="{StaticResource PrimaryButton}" Content="ENREGISTRER" Click="ConfirmSave_Click" />
+                    </StackPanel>
+                </StackPanel>
+            </HeaderedContentControl>
+        </Grid>
+    </Grid>
+</Window>
