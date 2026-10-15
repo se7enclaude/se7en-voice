@@ -20,6 +20,8 @@ public sealed class AppSettings
     public VoiceSettings Voice { get; set; } = new();
     public string CurrentPreset { get; set; } = "Normal";
     public bool MinimizeToTray { get; set; } = true;
+    /// <summary>Affiche les réglages avancés (page Effets, analyseur, lectures techniques).</summary>
+    public bool ExpertMode { get; set; }
     public double SoundboardVolumeDb { get; set; } = -6;
     public bool SoundsToMonitor { get; set; } = true;
     public List<SoundEntry> Sounds { get; set; } = [];

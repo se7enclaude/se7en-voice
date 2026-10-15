@@ -183,6 +183,10 @@ public sealed class MainViewModel : Observable, IDisposable
         Raise(nameof(CableRenamed));
         AutoRenameCable();
 
+        OutputOnCable = Devices.DefaultOutputIsCable();
+        Raise(nameof(MicFound));
+        Raise(nameof(ReadyForDiscord));
+
         if (restart) RestartAudio();
     }
 
@@ -747,6 +751,40 @@ public sealed class MainViewModel : Observable, IDisposable
             catch (Exception ex) { Notify?.Invoke("Impossible de changer le démarrage auto : " + ex.Message); }
             Raise();
         }
+    }
+
+    // ---------- Prêt pour Discord : les trois choses à vérifier ----------
+
+    private bool _outputOnCable;
+
+    /// <summary>Un micro physique est branché.</summary>
+    public bool MicFound => _selectedMicrophone != null;
+
+    /// <summary>La sortie par défaut de Windows est le micro virtuel : plus de son dans le casque.</summary>
+    public bool OutputOnCable { get => _outputOnCable; private set { if (Set(ref _outputOnCable, value)) Raise(nameof(ReadyForDiscord)); } }
+
+    public bool ReadyForDiscord => MicFound && CableFound && !OutputOnCable;
+
+    /// <summary>Remet le casque (ou les haut-parleurs) comme sortie par défaut de Windows.</summary>
+    public void FixWindowsOutput()
+    {
+        var target = _selectedMonitor ?? Speakers.FirstOrDefault();
+        if (target != null && DefaultDevice.SetDefaultOutput(target.Id))
+        {
+            RefreshDevices(restart: false);
+            Mixer.Scan();
+            Notify?.Invoke("Son rétabli · Windows joue de nouveau dans « " + target.Name + " »");
+        }
+        else
+        {
+            Notify?.Invoke("Changement impossible · choisissez votre casque dans Paramètres Windows → Son → Sortie");
+        }
+    }
+
+    public bool ExpertMode
+    {
+        get => _settings.ExpertMode;
+        set { _settings.ExpertMode = value; MarkDirty(); Raise(); }
     }
 
     public bool MinimizeToTray

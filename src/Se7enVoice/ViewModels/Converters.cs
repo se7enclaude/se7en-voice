@@ -14,7 +14,7 @@ public static class Converters
     public static IValueConverter Not { get; } = new Negate();
     public static IValueConverter IsNotEmpty { get; } = new NonEmpty();
     /// <summary>État du moteur pour le badge de la barre du haut.</summary>
-    public static IValueConverter LiveText { get; } = new Text(v => v is true ? "MOTEUR ACTIF" : "MICRO INACTIF");
+    public static IValueConverter LiveText { get; } = new Text(v => v is true ? "MICRO ACTIF" : "PAS DE MICRO");
 
     private sealed class Text(Func<object?, string> text) : IValueConverter
     {

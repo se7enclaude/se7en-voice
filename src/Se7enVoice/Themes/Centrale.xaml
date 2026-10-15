@@ -26,7 +26,7 @@
     <!-- Titre d'écran : Michroma 16, capitales (écrire le texte en capitales) -->
     <Style x:Key="TitleText" TargetType="TextBlock">
         <Setter Property="FontFamily" Value="{StaticResource FontDisplay}" />
-        <Setter Property="FontSize" Value="16" />
+        <Setter Property="FontSize" Value="21" />
         <Setter Property="Foreground" Value="{DynamicResource TextStrongBrush}" />
         <Setter Property="VerticalAlignment" Value="Center" />
     </Style>
@@ -36,36 +36,36 @@
     <!-- Libellé de module / section : 11 px, capitales espacées (utiliser c:Ui.Caps) -->
     <Style x:Key="LabelText" TargetType="TextBlock">
         <Setter Property="FontFamily" Value="{StaticResource FontMedium}" />
-        <Setter Property="FontSize" Value="11" />
+        <Setter Property="FontSize" Value="12.5" />
         <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}" />
         <Setter Property="VerticalAlignment" Value="Center" />
     </Style>
     <Style x:Key="MicroText" TargetType="TextBlock" BasedOn="{StaticResource LabelText}">
-        <Setter Property="FontSize" Value="10" />
+        <Setter Property="FontSize" Value="11.5" />
         <Setter Property="Foreground" Value="{DynamicResource TextTertiaryBrush}" />
     </Style>
     <Style x:Key="BodyText" TargetType="TextBlock">
         <Setter Property="FontFamily" Value="{StaticResource FontSans}" />
-        <Setter Property="FontSize" Value="13" />
+        <Setter Property="FontSize" Value="14" />
         <Setter Property="Foreground" Value="{DynamicResource TextSecondaryBrush}" />
         <Setter Property="TextWrapping" Value="Wrap" />
-        <Setter Property="LineHeight" Value="19" />
+        <Setter Property="LineHeight" Value="21" />
     </Style>
     <Style x:Key="StrongText" TargetType="TextBlock">
         <Setter Property="FontFamily" Value="{StaticResource FontSans}" />
-        <Setter Property="FontSize" Value="13" />
+        <Setter Property="FontSize" Value="14" />
         <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}" />
         <Setter Property="VerticalAlignment" Value="Center" />
     </Style>
     <Style x:Key="CaptionText" TargetType="TextBlock">
         <Setter Property="FontFamily" Value="{StaticResource FontSans}" />
-        <Setter Property="FontSize" Value="12" />
+        <Setter Property="FontSize" Value="13" />
         <Setter Property="Foreground" Value="{DynamicResource TextSecondaryBrush}" />
     </Style>
     <!-- Valeurs, codes, raccourcis : IBM Plex Mono -->
     <Style x:Key="ReadoutText" TargetType="TextBlock">
         <Setter Property="FontFamily" Value="{StaticResource FontMono}" />
-        <Setter Property="FontSize" Value="11" />
+        <Setter Property="FontSize" Value="12.5" />
         <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}" />
         <Setter Property="VerticalAlignment" Value="Center" />
     </Style>
@@ -125,14 +125,14 @@
     <!-- Module à titre : Header (capitales), Ui.Subtitle, Tag = interrupteur ou badge à droite -->
     <Style x:Key="Card" TargetType="HeaderedContentControl">
         <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}" />
-        <Setter Property="Padding" Value="14,12,14,14" />
+        <Setter Property="Padding" Value="18,16,18,18" />
         <Setter Property="Focusable" Value="False" />
         <Setter Property="Template">
             <Setter.Value>
                 <ControlTemplate TargetType="HeaderedContentControl">
                     <Border Style="{StaticResource Panel}" Padding="{TemplateBinding Padding}" TextElement.Foreground="{TemplateBinding Foreground}">
                         <DockPanel>
-                            <DockPanel x:Name="head" DockPanel.Dock="Top" Margin="0,0,0,12" MinHeight="20">
+                            <DockPanel x:Name="head" DockPanel.Dock="Top" Margin="0,0,0,14" MinHeight="24">
                                 <ContentPresenter DockPanel.Dock="Right" Content="{TemplateBinding Tag}" VerticalAlignment="Center" Margin="10,0,0,0" />
                                 <StackPanel VerticalAlignment="Center">
                                     <TextBlock Text="{Binding Header, RelativeSource={RelativeSource TemplatedParent}, Converter={x:Static c:Caps.Instance}}" Style="{StaticResource LabelText}" />
@@ -168,7 +168,7 @@
         <Setter Property="Template">
             <Setter.Value>
                 <ControlTemplate TargetType="HeaderedContentControl">
-                    <Border Style="{StaticResource Panel}" Padding="12,14,12,12">
+                    <Border Style="{StaticResource Panel}" Padding="16,18,16,14">
                         <Grid>
                             <Border Style="{StaticResource Grip}" Margin="0,-8,0,0" />
                             <DockPanel>
@@ -203,9 +203,9 @@
         <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}" />
         <Setter Property="BorderBrush" Value="{DynamicResource BorderBrush}" />
         <Setter Property="FontFamily" Value="{StaticResource FontMedium}" />
-        <Setter Property="FontSize" Value="11" />
-        <Setter Property="Height" Value="32" />
-        <Setter Property="Padding" Value="14,0" />
+        <Setter Property="FontSize" Value="12.5" />
+        <Setter Property="Height" Value="38" />
+        <Setter Property="Padding" Value="16,0" />
         <Setter Property="Margin" Value="0,0,6,0" />
         <Setter Property="Cursor" Value="Hand" />
         <Setter Property="Focusable" Value="False" />
@@ -217,7 +217,7 @@
                         <Border x:Name="b" Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="1" CornerRadius="5" />
                         <Border x:Name="bevel" Background="{StaticResource KeyBevelBrush}" CornerRadius="5" Margin="1" IsHitTestVisible="False" />
                         <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" VerticalAlignment="Center" Margin="{TemplateBinding Padding}">
-                            <TextBlock x:Name="ic" Text="{TemplateBinding c:Ui.Icon}" FontFamily="{StaticResource FontIcons}" FontSize="12"
+                            <TextBlock x:Name="ic" Text="{TemplateBinding c:Ui.Icon}" FontFamily="{StaticResource FontIcons}" FontSize="14"
                                        VerticalAlignment="Center" Margin="0,0,8,0" />
                             <TextBlock x:Name="t" Text="{Binding Content, RelativeSource={RelativeSource TemplatedParent}, Converter={x:Static c:Caps.Instance}}"
                                        VerticalAlignment="Center" Margin="0,0,0,1" />
@@ -280,16 +280,16 @@
         <Setter Property="Tag" Value="#1AFF3D33" />
     </Style>
     <Style x:Key="SmallPrimaryButton" TargetType="Button" BasedOn="{StaticResource PrimaryButton}">
-        <Setter Property="Height" Value="24" /><Setter Property="FontSize" Value="10" /><Setter Property="Padding" Value="10,0" />
+        <Setter Property="Height" Value="32" /><Setter Property="FontSize" Value="11.5" /><Setter Property="Padding" Value="12,0" />
     </Style>
     <Style x:Key="SmallSecondaryButton" TargetType="Button" BasedOn="{StaticResource SecondaryButton}">
-        <Setter Property="Height" Value="24" /><Setter Property="FontSize" Value="10" /><Setter Property="Padding" Value="10,0" />
+        <Setter Property="Height" Value="32" /><Setter Property="FontSize" Value="11.5" /><Setter Property="Padding" Value="12,0" />
     </Style>
     <Style x:Key="SmallGhostButton" TargetType="Button" BasedOn="{StaticResource GhostButton}">
-        <Setter Property="Height" Value="24" /><Setter Property="FontSize" Value="10" /><Setter Property="Padding" Value="10,0" />
+        <Setter Property="Height" Value="32" /><Setter Property="FontSize" Value="11.5" /><Setter Property="Padding" Value="12,0" />
     </Style>
     <Style x:Key="SmallDangerButton" TargetType="Button" BasedOn="{StaticResource DangerButton}">
-        <Setter Property="Height" Value="24" /><Setter Property="FontSize" Value="10" /><Setter Property="Padding" Value="10,0" />
+        <Setter Property="Height" Value="32" /><Setter Property="FontSize" Value="11.5" /><Setter Property="Padding" Value="12,0" />
     </Style>
 
     <!-- Touche à bascule (A1, Solo, A/B, → Micro) : relief au repos, inversée quand active -->
@@ -306,19 +306,19 @@
         </Style.Triggers>
     </Style>
     <Style x:Key="SmallKeyToggle" TargetType="ToggleButton" BasedOn="{StaticResource KeyToggle}">
-        <Setter Property="Height" Value="24" /><Setter Property="FontSize" Value="10" /><Setter Property="Padding" Value="8,0" />
+        <Setter Property="Height" Value="30" /><Setter Property="FontSize" Value="11.5" /><Setter Property="Padding" Value="10,0" />
     </Style>
 
     <!-- Bouton icône carré (32) : relief ; actif = inversé, ou couleur (Tag) pour muet / REC -->
     <Style x:Key="IconButton" TargetType="ButtonBase">
-        <Setter Property="Width" Value="32" />
-        <Setter Property="Height" Value="32" />
+        <Setter Property="Width" Value="38" />
+        <Setter Property="Height" Value="38" />
         <Setter Property="Cursor" Value="Hand" />
         <Setter Property="Focusable" Value="False" />
         <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}" />
         <Setter Property="Background" Value="{DynamicResource RaisedBrush}" />
         <Setter Property="BorderBrush" Value="{DynamicResource BorderBrush}" />
-        <Setter Property="FontSize" Value="13" />
+        <Setter Property="FontSize" Value="15" />
         <Setter Property="Tag" Value="{DynamicResource InverseBrush}" />
         <Setter Property="Template">
             <Setter.Value>
@@ -356,9 +356,9 @@
         <Setter Property="Tag" Value="{DynamicResource RedBrush}" />
     </Style>
     <Style x:Key="SmallIconButton" TargetType="ButtonBase" BasedOn="{StaticResource IconButton}">
-        <Setter Property="Width" Value="24" />
-        <Setter Property="Height" Value="24" />
-        <Setter Property="FontSize" Value="11" />
+        <Setter Property="Width" Value="30" />
+        <Setter Property="Height" Value="30" />
+        <Setter Property="FontSize" Value="13" />
     </Style>
     <Style x:Key="GhostIconButton" TargetType="ButtonBase" BasedOn="{StaticResource IconButton}">
         <Setter Property="Background" Value="Transparent" />
@@ -369,8 +369,8 @@
     <!-- ===== Navigation ===== -->
     <!-- Rail : icône 20 + libellé 9 px en capitales ; actif = inversé avec halo -->
     <Style x:Key="RailItem" TargetType="RadioButton">
-        <Setter Property="Width" Value="56" />
-        <Setter Property="Height" Value="54" />
+        <Setter Property="Width" Value="80" />
+        <Setter Property="Height" Value="68" />
         <Setter Property="Margin" Value="0,0,0,6" />
         <Setter Property="Foreground" Value="{DynamicResource TextSecondaryBrush}" />
         <Setter Property="Cursor" Value="Hand" />
@@ -380,9 +380,9 @@
                 <ControlTemplate TargetType="RadioButton">
                     <Border x:Name="b" Background="Transparent" BorderBrush="Transparent" BorderThickness="1" CornerRadius="8">
                         <StackPanel VerticalAlignment="Center">
-                            <TextBlock Text="{TemplateBinding c:Ui.Icon}" FontFamily="{StaticResource FontIcons}" FontSize="19" HorizontalAlignment="Center" />
-                            <TextBlock Text="{Binding Content, RelativeSource={RelativeSource TemplatedParent}, Converter={x:Static c:Caps.Instance}}"
-                                       FontFamily="{StaticResource FontMedium}" FontSize="9" HorizontalAlignment="Center" Margin="0,7,0,0" />
+                            <TextBlock Text="{TemplateBinding c:Ui.Icon}" FontFamily="{StaticResource FontIcons}" FontSize="22" HorizontalAlignment="Center" />
+                            <TextBlock Text="{Binding Content, RelativeSource={RelativeSource TemplatedParent}}"
+                                       FontFamily="{StaticResource FontMedium}" FontSize="13" HorizontalAlignment="Center" Margin="0,6,0,0" />
                         </StackPanel>
                     </Border>
                     <ControlTemplate.Triggers>
@@ -413,9 +413,9 @@
     <Style x:Key="SegItem" TargetType="RadioButton">
         <Setter Property="Foreground" Value="{DynamicResource TextSecondaryBrush}" />
         <Setter Property="FontFamily" Value="{StaticResource FontMedium}" />
-        <Setter Property="FontSize" Value="10" />
-        <Setter Property="Height" Value="26" />
-        <Setter Property="Padding" Value="12,0" />
+        <Setter Property="FontSize" Value="11.5" />
+        <Setter Property="Height" Value="32" />
+        <Setter Property="Padding" Value="11,0" />
         <Setter Property="Margin" Value="0,0,3,0" />
         <Setter Property="Cursor" Value="Hand" />
         <Setter Property="Focusable" Value="False" />
@@ -446,8 +446,8 @@
     <Style x:Key="Switch" TargetType="ToggleButton">
         <Setter Property="Cursor" Value="Hand" />
         <Setter Property="Focusable" Value="False" />
-        <Setter Property="Width" Value="34" />
-        <Setter Property="Height" Value="18" />
+        <Setter Property="Width" Value="42" />
+        <Setter Property="Height" Value="22" />
         <Setter Property="VerticalAlignment" Value="Center" />
         <Setter Property="Template">
             <Setter.Value>
@@ -481,15 +481,15 @@
     <Style x:Key="Enable" TargetType="ToggleButton">
         <Setter Property="Cursor" Value="Hand" />
         <Setter Property="Focusable" Value="False" />
-        <Setter Property="Width" Value="20" />
-        <Setter Property="Height" Value="20" />
+        <Setter Property="Width" Value="24" />
+        <Setter Property="Height" Value="24" />
         <Setter Property="ToolTip" Value="Allumer / éteindre" />
         <Setter Property="Template">
             <Setter.Value>
                 <ControlTemplate TargetType="ToggleButton">
                     <Border x:Name="b" Background="{DynamicResource RaisedBrush}" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1" CornerRadius="5"
                             Effect="{DynamicResource RaisedShadow}">
-                        <Border x:Name="dot" Width="9" Height="9" CornerRadius="2" Background="Transparent" BorderBrush="{DynamicResource Ink500Brush}" BorderThickness="1" />
+                        <Border x:Name="dot" Width="11" Height="11" CornerRadius="2" Background="Transparent" BorderBrush="{DynamicResource Ink500Brush}" BorderThickness="1" />
                     </Border>
                     <ControlTemplate.Triggers>
                         <Trigger Property="IsMouseOver" Value="True">
@@ -618,7 +618,7 @@
     <Style TargetType="ComboBoxItem">
         <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}" />
         <Setter Property="FontFamily" Value="{StaticResource FontSans}" />
-        <Setter Property="FontSize" Value="13" />
+        <Setter Property="FontSize" Value="14" />
         <Setter Property="Cursor" Value="Hand" />
         <Setter Property="Template">
             <Setter.Value>
@@ -642,8 +642,8 @@
     <Style TargetType="ComboBox">
         <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}" />
         <Setter Property="FontFamily" Value="{StaticResource FontSans}" />
-        <Setter Property="FontSize" Value="13" />
-        <Setter Property="Height" Value="32" />
+        <Setter Property="FontSize" Value="14" />
+        <Setter Property="Height" Value="38" />
         <Setter Property="Template">
             <Setter.Value>
                 <ControlTemplate TargetType="ComboBox">
@@ -672,9 +672,9 @@
         <Setter Property="CaretBrush" Value="{DynamicResource BoneBrush}" />
         <Setter Property="SelectionBrush" Value="{DynamicResource BoneBrush}" />
         <Setter Property="FontFamily" Value="{StaticResource FontSans}" />
-        <Setter Property="FontSize" Value="13" />
-        <Setter Property="Height" Value="32" />
-        <Setter Property="Padding" Value="10,0" />
+        <Setter Property="FontSize" Value="14" />
+        <Setter Property="Height" Value="38" />
+        <Setter Property="Padding" Value="12,0" />
         <Setter Property="VerticalContentAlignment" Value="Center" />
         <Setter Property="Template">
             <Setter.Value>
@@ -738,15 +738,15 @@
     <!-- ===== Badges (rayon 3, filet de la couleur d'état), touches ===== -->
     <Style x:Key="Badge" TargetType="Border">
         <Setter Property="CornerRadius" Value="3" />
-        <Setter Property="Height" Value="18" />
-        <Setter Property="Padding" Value="7,0" />
+        <Setter Property="Height" Value="22" />
+        <Setter Property="Padding" Value="8,0" />
         <Setter Property="BorderThickness" Value="1" />
         <Setter Property="BorderBrush" Value="{DynamicResource BorderBrush}" />
         <Setter Property="Background" Value="Transparent" />
         <Setter Property="VerticalAlignment" Value="Center" />
         <Setter Property="TextElement.Foreground" Value="{DynamicResource TextSecondaryBrush}" />
         <Setter Property="TextElement.FontFamily" Value="{StaticResource FontMedium}" />
-        <Setter Property="TextElement.FontSize" Value="10" />
+        <Setter Property="TextElement.FontSize" Value="11.5" />
     </Style>
     <Style x:Key="BadgeText" TargetType="TextBlock">
         <Setter Property="VerticalAlignment" Value="Center" />
@@ -790,12 +790,12 @@
         <Setter Property="BorderBrush" Value="{DynamicResource BorderBrush}" />
         <Setter Property="BorderThickness" Value="1" />
         <Setter Property="CornerRadius" Value="3" />
-        <Setter Property="MinHeight" Value="20" />
-        <Setter Property="Padding" Value="6,0" />
+        <Setter Property="MinHeight" Value="24" />
+        <Setter Property="Padding" Value="7,0" />
         <Setter Property="Margin" Value="0,0,10,0" />
         <Setter Property="VerticalAlignment" Value="Center" />
         <Setter Property="TextElement.FontFamily" Value="{StaticResource FontMono}" />
-        <Setter Property="TextElement.FontSize" Value="10" />
+        <Setter Property="TextElement.FontSize" Value="11.5" />
         <Setter Property="TextElement.Foreground" Value="{DynamicResource TextTertiaryBrush}" />
     </Style>
     <!-- Lecture en creux (valeur de fader) -->
@@ -808,7 +808,7 @@
         <Setter Property="Padding" Value="6,2" />
         <Setter Property="HorizontalAlignment" Value="Center" />
         <Setter Property="TextElement.FontFamily" Value="{StaticResource FontMono}" />
-        <Setter Property="TextElement.FontSize" Value="11" />
+        <Setter Property="TextElement.FontSize" Value="12.5" />
         <Setter Property="TextElement.Foreground" Value="{DynamicResource TextPrimaryBrush}" />
     </Style>
 
@@ -844,7 +844,7 @@
     <Style TargetType="ToolTip">
         <Setter Property="Foreground" Value="{DynamicResource TextInverseBrush}" />
         <Setter Property="FontFamily" Value="{StaticResource FontSans}" />
-        <Setter Property="FontSize" Value="12" />
+        <Setter Property="FontSize" Value="13.5" />
         <Setter Property="Template">
             <Setter.Value>
                 <ControlTemplate TargetType="ToolTip">

@@ -205,6 +205,10 @@ public partial class MainWindow : Window
 
     private void GoVoice_Click(object sender, RoutedEventArgs e) => TabVoice.IsChecked = true;
 
+    private void GoSettings_Click(object sender, RoutedEventArgs e) => TabSettings.IsChecked = true;
+
+    private void FixOutput_Click(object sender, RoutedEventArgs e) => _vm.FixWindowsOutput();
+
     private void SearchBox_GotFocus(object sender, KeyboardFocusChangedEventArgs e) => TabVoice.IsChecked = true;
 
     private void Favorite_Click(object sender, RoutedEventArgs e)

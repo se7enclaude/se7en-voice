@@ -107,7 +107,7 @@ public sealed class ValueBar : FrameworkElement
     /// <summary>Pas d'aimantation (0 = libre).</summary>
     public static readonly DependencyProperty TickProperty = Ink.Dp<ValueBar, double>(nameof(Tick), 0, render: false);
 
-    private const double TrackY = 31, TrackH = 8, ThumbR = 9, Pad = ThumbR + 1;
+    private const double TrackY = 37, TrackH = 10, ThumbR = 10, Pad = ThumbR + 1;
 
     private static readonly Brush TrackBrush = Ink.Freeze(new SolidColorBrush(Color.FromRgb(0x0B, 0x0B, 0x0E)));
     private static readonly Pen TrackEdge = Ink.FreezePen(new Pen(new SolidColorBrush(Color.FromArgb(0x1F, 0xFF, 0xFF, 0xFF)), 1));
@@ -120,8 +120,8 @@ public sealed class ValueBar : FrameworkElement
 
     public ValueBar()
     {
-        Height = 44;
-        MinWidth = 120;
+        Height = 52;
+        MinWidth = 130;
         Cursor = Cursors.Hand;
         Focusable = true;
         FocusVisualStyle = null;
@@ -213,12 +213,12 @@ public sealed class ValueBar : FrameworkElement
         string text;
         try { text = string.Format(culture, Format, Value); }
         catch (FormatException) { text = Value.ToString("0.##", culture); }
-        var readout = new FormattedText(text, culture, FlowDirection.LeftToRight, Ink.Mono, 12.5,
+        var readout = new FormattedText(text, culture, FlowDirection.LeftToRight, Ink.Mono, 14,
             Ink.Theme(this, "TextStrongBrush", Ink.Bone50), dpi);
         dc.DrawText(readout, new Point(w - Pad + 2 - readout.Width, 4));
         if (!string.IsNullOrEmpty(Label))
         {
-            var label = new FormattedText(Caps.Space(Label), culture, FlowDirection.LeftToRight, Ink.Label, 11,
+            var label = new FormattedText(Caps.Space(Label), culture, FlowDirection.LeftToRight, Ink.Label, 12.5,
                 Ink.Theme(this, hot ? "TextPrimaryBrush" : "TextSecondaryBrush", Ink.Secondary), dpi)
             { MaxTextWidth = Math.Max(10, w - Pad * 2 - readout.Width - 8), Trimming = TextTrimming.CharacterEllipsis, MaxLineCount = 1 };
             dc.DrawText(label, new Point(Pad - 2, 6));

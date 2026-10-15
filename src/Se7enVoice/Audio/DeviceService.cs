@@ -46,6 +46,13 @@ public sealed class DeviceService : IMMNotificationClient, IDisposable
 
     public string? DefaultSpeakerId() => DefaultId(DataFlow.Render);
 
+    /// <summary>La sortie par défaut de Windows (multimédia) est le micro virtuel : le son du PC part vers Discord.</summary>
+    public bool DefaultOutputIsCable()
+    {
+        try { return IsCable(_enumerator.GetDefaultAudioEndpoint(DataFlow.Render, Role.Multimedia)); }
+        catch (Exception) { return false; }
+    }
+
     public MMDevice? Get(string? id)
     {
         if (string.IsNullOrEmpty(id)) return null;
