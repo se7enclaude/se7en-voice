@@ -28,7 +28,6 @@ public partial class MainWindow : Window
         InitializeComponent();
         _vm = new MainViewModel();
         DataContext = _vm;
-        if (_vm.IsDark) ThemeManager.Apply(true);
 
         _vm.PresetApplied += ShowPresetToast;
         _vm.Notify += ShowToast;

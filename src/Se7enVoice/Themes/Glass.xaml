@@ -2,7 +2,7 @@
   Design system « Centrale Audio », adapté à WPF : verre liquide.
   Feuilles translucides qui flottent sur un fond doux, boutons « gel » violet / menthe, une seule carte irisée
   par vue. Typo Geist (titres 600, texte 400/500) et Geist Mono pour toutes les valeurs (dB, Hz, raccourcis).
-  Les couleurs qui changent entre clair et sombre viennent de Light.xaml / Dark.xaml (DynamicResource).
+  Les couleurs viennent de Dark.xaml (palette sombre, la seule de l'appli).
 -->
 <ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
                     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"

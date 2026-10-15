@@ -1,4 +1,4 @@
-<!-- Palette sombre du design « Centrale Audio » : noir violacé avec lueurs violette, menthe et rose. -->
+<!-- Palette du design « Centrale Audio » (thème sombre, le seul de l'appli) : noir violacé avec lueurs violette, menthe et rose. -->
 <ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
                     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
 

@@ -175,12 +175,6 @@
                     </StackPanel>
 
                     <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center" WindowChrome.IsHitTestVisibleInChrome="True">
-                        <Border Style="{StaticResource SegBar}" Margin="0,0,10,0">
-                            <StackPanel Orientation="Horizontal">
-                                <RadioButton Style="{StaticResource SegItem}" Content="Clair" c:Ui.Icon="&#xE706;" GroupName="Theme" IsChecked="{Binding IsLight}" />
-                                <RadioButton Style="{StaticResource SegItem}" Content="Sombre" c:Ui.Icon="&#xE708;" GroupName="Theme" IsChecked="{Binding IsDark}" />
-                            </StackPanel>
-                        </Border>
                         <Border Style="{StaticResource LiveBadge}" Margin="0,0,10,0" Visibility="{Binding IsRecording, Converter={StaticResource BoolToVis}}">
                             <StackPanel Orientation="Horizontal">
                                 <Ellipse Width="7" Height="7" Fill="White" Margin="0,0,7,0" />
@@ -911,7 +905,7 @@
                         <DockPanel DockPanel.Dock="Top" Style="{StaticResource ScreenHead}" Margin="0,0,12,18">
                             <StackPanel>
                                 <TextBlock Text="Réglages" Style="{StaticResource H2Text}" />
-                                <TextBlock Text="Micro virtuel, périphériques, raccourcis et apparence" Style="{StaticResource CaptionText}" Margin="0,4,0,0" />
+                                <TextBlock Text="Micro virtuel, périphériques et raccourcis" Style="{StaticResource CaptionText}" Margin="0,4,0,0" />
                             </StackPanel>
                         </DockPanel>
                         <ScrollViewer VerticalScrollBarVisibility="Auto">
@@ -1004,16 +998,7 @@
                                 </StackPanel>
 
                                 <StackPanel Grid.Column="2">
-                                    <HeaderedContentControl Style="{StaticResource Card}" Header="Apparence" c:Ui.Icon="&#xE790;">
-                                        <Border Style="{StaticResource SegBar}" HorizontalAlignment="Left">
-                                            <StackPanel Orientation="Horizontal">
-                                                <RadioButton Style="{StaticResource SegItem}" Content="Clair" c:Ui.Icon="&#xE706;" GroupName="Theme2" IsChecked="{Binding IsLight}" />
-                                                <RadioButton Style="{StaticResource SegItem}" Content="Sombre" c:Ui.Icon="&#xE708;" GroupName="Theme2" IsChecked="{Binding IsDark}" />
-                                            </StackPanel>
-                                        </Border>
-                                    </HeaderedContentControl>
-
-                                    <HeaderedContentControl Style="{StaticResource Card}" Header="Application" c:Ui.Icon="&#xE713;" Margin="0,14,0,0">
+                                    <HeaderedContentControl Style="{StaticResource Card}" Header="Application" c:Ui.Icon="&#xE713;">
                                         <StackPanel>
                                             <DockPanel Style="{StaticResource SettingRow}">
                                                 <ToggleButton DockPanel.Dock="Right" Style="{StaticResource Switch}" IsChecked="{Binding StartWithWindows}" />

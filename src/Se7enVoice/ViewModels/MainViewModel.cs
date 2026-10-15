@@ -75,23 +75,6 @@ public sealed class MainViewModel : Observable, IDisposable
 
     public MixerViewModel Mixer { get; }
 
-    // ---------- Apparence ----------
-
-    public bool IsDark
-    {
-        get => _settings.Theme == "dark";
-        set
-        {
-            if (value == IsDark) return;
-            _settings.Theme = value ? "dark" : "light";
-            MarkDirty();
-            ThemeManager.Apply(value);
-            Raise(); Raise(nameof(IsLight));
-        }
-    }
-
-    public bool IsLight { get => !IsDark; set => IsDark = !value; }
-
     /// <summary>Voix de la barre du bas : les favoris, sinon une sélection de départ.</summary>
     public ObservableCollection<PresetItem> QuickVoices { get; } = [];
 
