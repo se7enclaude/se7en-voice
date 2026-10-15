@@ -1,5 +1,6 @@
 using Se7enVoice.Core.Audio;
 using Se7enVoice.Core.Dsp;
+using Se7enVoice.Core.Mixer;
 using Se7enVoice.Core.Presets;
 
 namespace Se7enVoice.Tests;
@@ -126,6 +127,104 @@ public class DspTests
     }
 
     [Fact]
+    public void Fft_RoundTrips()
+    {
+        var fft = new Fft(256);
+        var re = new double[256]; var im = new double[256];
+        var rnd = new Random(1);
+        for (int i = 0; i < 256; i++) re[i] = rnd.NextDouble() - 0.5;
+        var copy = (double[])re.Clone();
+        fft.Transform(re, im);
+        fft.Transform(re, im, inverse: true);
+        for (int i = 0; i < 256; i++) Assert.Equal(copy[i], re[i], 9);
+    }
+
+    [Fact]
+    public void Stft_WithoutChanges_ReconstructsDelayedSignal()
+    {
+        var timbre = new TimbreShifter(Rate) { Ratio = 1.0001 }; // quasi neutre : reconstruit le signal décalé
+        var input = Sine(440, 0.5, amp: 0.3);
+        var s = (float[])input.Clone();
+        timbre.Process(s);
+        int lat = timbre.LatencySamples;
+        for (int i = Rate / 10; i < s.Length; i++) Assert.Equal(input[i - lat], s[i], 2);
+    }
+
+    [Fact]
+    public void Formants_ChangeTimbre_ButKeepPitch()
+    {
+        var chain = new EffectChain(Rate) { Settings = new VoiceSettings { GateOn = false, FormantSemitones = 4 } };
+        var s = Harmonics(150, 1.0);
+        chain.Process(s);
+        Assert.All(s, v => Assert.True(float.IsFinite(v)));
+        Assert.InRange(DominantFrequency(s.AsSpan(Rate / 4)), 150 * 0.95, 150 * 1.05);
+    }
+
+    [Fact]
+    public void Denoiser_RemovesSteadyNoise()
+    {
+        var dn = new SpectralDenoiser(Rate) { Amount = 0.8 };
+        var rnd = new Random(3);
+        var s = new float[Rate * 2];
+        for (int i = 0; i < s.Length; i++) s[i] = (float)((rnd.NextDouble() * 2 - 1) * 0.05);
+        double before = Rms(s.AsSpan(Rate));
+        dn.Process(s);
+        double after = Rms(s.AsSpan(Rate));
+        Assert.True(after < before * 0.2, $"{after / before:P0}");
+    }
+
+    [Fact]
+    public void Autotune_SnapsToNearestNote()
+    {
+        // 452 Hz (entre La 440 et La# 466) doit être ramené vers 440 Hz.
+        var chain = new EffectChain(Rate) { Settings = new VoiceSettings { GateOn = false, AutotuneOn = true, AutotuneSpeed = 1 } };
+        var s = Harmonics(452, 1.5);
+        for (int i = 0; i < s.Length; i += 480) chain.Process(s.AsSpan(i, Math.Min(480, s.Length - i)));
+        var tracker = new PitchTracker(Rate);
+        tracker.Feed(s.AsSpan(Rate));
+        Assert.InRange(tracker.Frequency, 440 * 0.985, 440 * 1.015);
+    }
+
+    [Fact]
+    public void PitchTracker_FindsFundamental()
+    {
+        var t = new PitchTracker(Rate);
+        t.Feed(Harmonics(196, 0.5));
+        Assert.InRange(t.Frequency, 194, 198);
+    }
+
+    [Fact]
+    public void NewEffects_StayFiniteAndBounded()
+    {
+        var all = new VoiceSettings
+        {
+            GateOn = false, LowCutOn = true, DenoiseOn = true, PitchSemitones = -5, KeepFormants = true, FormantSemitones = 2, WhisperOn = true,
+            HarmonyOn = true, VibratoOn = true, BitcrushOn = true, FilterOn = true, EqOn = true, EqPresenceDb = 12, DeEsserOn = true,
+            ChorusOn = true, AutotuneOn = true, CompressorOn = true,
+        };
+        var chain = new EffectChain(Rate) { Settings = all };
+        var s = Harmonics(220, 1);
+        chain.Process(s);
+        Assert.All(s, v => Assert.True(float.IsFinite(v) && Math.Abs(v) < 8));
+        Assert.True(chain.LatencyMs > 30);
+    }
+
+    private static float[] Harmonics(double f0, double seconds)
+    {
+        var s = new float[(int)(Rate * seconds)];
+        for (int i = 0; i < s.Length; i++)
+            for (int h = 1; h <= 8; h++) s[i] += (float)(0.25 / h * Math.Sin(2 * Math.PI * f0 * h * i / Rate));
+        return s;
+    }
+
+    private static double Rms(ReadOnlySpan<float> s)
+    {
+        double sum = 0;
+        foreach (var v in s) sum += v * v;
+        return Math.Sqrt(sum / s.Length);
+    }
+
+    [Fact]
     public void ResamplingRing_ConvertsRate_WithoutGapsAfterPriming()
     {
         var ring = new ResamplingRing(48000, 44100, targetLatencyMs: 20);
@@ -164,6 +263,15 @@ public class PresetTests
     }
 
     [Fact]
+    public void BuiltInPresets_AreInKnownCategories_AndKeepOldNames()
+    {
+        Assert.All(BuiltInPresets.All, p => Assert.Contains(p.Category, PresetCategories.All));
+        string[] v1 = ["Normal", "Voix grave", "Chipmunk", "Robot", "Alien", "Démon", "Radio", "Grotte", "Stade", "Voix aiguë", "Géant", "Streamer"];
+        Assert.All(v1, n => Assert.Contains(BuiltInPresets.All, p => p.Name == n));
+        Assert.True(BuiltInPresets.All.Count >= 40);
+    }
+
+    [Fact]
     public void PresetStore_RoundTrips()
     {
         var dir = Path.Combine(Path.GetTempPath(), "se7en-tests-" + Guid.NewGuid());
@@ -194,4 +302,20 @@ public class PresetTests
         Assert.Null(PresetStore.TryRead(file));
         File.Delete(file);
     }
+}
+
+public class MixerTests
+{
+    [Theory]
+    [InlineData("Spotify", null, AppCategories.Music)]
+    [InlineData("Discord.exe", null, AppCategories.Chat)]
+    [InlineData("chrome", null, AppCategories.Browser)]
+    [InlineData("VALORANT-Win64-Shipping", null, AppCategories.Games)]
+    [InlineData("hollow_knight", @"D:\SteamLibrary\steamapps\common\Hollow Knight\hollow_knight.exe", AppCategories.Games)]
+    [InlineData("obs64", @"C:\Program Files\obs-studioin4bit\obs64.exe", AppCategories.Other)]
+    public void Classify_PutsAppsInTheRightChannel(string name, string? path, string expected) =>
+        Assert.Equal(expected, AppCategories.Classify(name, path));
+
+    [Fact]
+    public void Classify_SystemSounds() => Assert.Equal(AppCategories.System, AppCategories.Classify("", null, isSystemSounds: true));
 }

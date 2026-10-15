@@ -14,8 +14,12 @@ public sealed class MainViewModel : Observable, IDisposable
 {
     private readonly AppSettings _settings;
     private readonly PresetStore _store = new(Path.Combine(AppSettings.Folder, "presets"));
-    private readonly DispatcherTimer _meterTimer, _saveTimer, _retryTimer, _deviceDebounce;
+    private readonly DispatcherTimer _meterTimer, _saveTimer, _retryTimer, _deviceDebounce, _keyTimer;
     private bool _dirty;
+    private string _presetFilter = AllFilter, _presetSearch = "";
+    private bool _bypass, _capturingKey, _mixerVisible;
+    private int _keyCaptureTicks;
+    private double _sinceVoice = 99;
 
     private List<AudioDevice> _microphones = [], _speakers = [];
     private AudioDevice? _selectedMicrophone, _selectedMonitor;
@@ -35,6 +39,9 @@ public sealed class MainViewModel : Observable, IDisposable
 
         foreach (var p in BuiltInPresets.All) Presets.Add(new PresetItem(p));
         foreach (var p in _store.LoadAll()) UserPresets.Add(new PresetItem(p));
+        foreach (var p in AllPresets) p.IsFavorite = _settings.Favorites.Contains(p.Name);
+        Mixer = new MixerViewModel(_settings, Engine, MarkDirty, msg => Notify?.Invoke(msg));
+        RefreshPresetView();
         _current = AllPresets.FirstOrDefault(p => p.Name == _settings.CurrentPreset);
         if (_current != null)
         {
@@ -56,10 +63,17 @@ public sealed class MainViewModel : Observable, IDisposable
         _deviceDebounce.Stop();
         Devices.Changed += () => Dispatcher.BeginInvoke(() => { _deviceDebounce.Stop(); _deviceDebounce.Start(); });
 
+        // Push-to-talk et capture de touche : on lit l'état du clavier/souris ~60 fois par seconde.
+        _keyTimer = new DispatcherTimer(TimeSpan.FromMilliseconds(16), DispatcherPriority.Normal, (_, _) => KeyTick(), Dispatcher);
+        _keyTimer.Stop();
+
         RefreshDevices(restart: true);
         _meterTimer.Start();
         _saveTimer.Start();
+        UpdateKeyTimer();
     }
+
+    public MixerViewModel Mixer { get; }
 
     private static Dispatcher Dispatcher => System.Windows.Application.Current.Dispatcher;
 
@@ -164,7 +178,7 @@ public sealed class MainViewModel : Observable, IDisposable
         string? mic = _selectedMicrophone?.Id;
         RefreshDevices(restart: false);
         if (hadCable != CableFound || mic != _selectedMicrophone?.Id || !Engine.IsRunning) RestartAudio();
-        if (!hadCable && CableFound) Notify?.Invoke("Micro virtuel détecté ! Choisis « " + CableName + " » comme micro dans Discord.");
+        if (!hadCable && CableFound) Notify?.Invoke("Micro virtuel détecté · choisissez « " + CableName + " » comme micro dans Discord");
     }
 
     public void RestartAudio()
@@ -181,6 +195,8 @@ public sealed class MainViewModel : Observable, IDisposable
         {
             var cable = Devices.Get(Devices.CableInput()?.Id);
             Engine.Start(mic, cable, MonitorOn ? MonitorDevice() : null);
+            Mixer.RestartMicApps();
+            Raise(nameof(LatencyText));
             Live = true;
             Status = Engine.CableConnected ? "En direct" : "Test · micro virtuel absent";
         }
@@ -206,9 +222,18 @@ public sealed class MainViewModel : Observable, IDisposable
 
     private void UpdateMeters()
     {
-        var (i, o) = Engine.TakeLevels();
+        var (i, o, a) = Engine.TakeLevels();
         InputLevel = Smooth(InputLevel, ToMeter(i));
         OutputLevel = Smooth(OutputLevel, Muted ? 0 : ToMeter(o));
+
+        // « Je parle » : le micro dépasse le seuil de l'anti-bruit (ou -45 dB) depuis moins de 300 ms.
+        double thresholdDb = GateOn ? GateThresholdDb + 6 : -45;
+        _sinceVoice = i > 0 && 20 * Math.Log10(i) > thresholdDb && !Muted ? 0 : _sinceVoice + 0.033;
+        Mixer.Tick(_sinceVoice < 0.3, _mixerVisible, a);
+        Talking = _sinceVoice < 0.3 && Engine.TalkOpen && !Muted;
+
+        if (Engine.IsRecording) Raise(nameof(RecordingTime));
+        if (AutotuneOn) Raise(nameof(DetectedNote));
 
         static double ToMeter(float peak) => peak <= 0 ? 0 : Math.Clamp((20 * Math.Log10(peak) + 60) / 60, 0, 1);
         static double Smooth(double old, double now) => now > old ? now : Math.Max(now, old - 0.035);
@@ -218,6 +243,70 @@ public sealed class MainViewModel : Observable, IDisposable
 
     public PresetItem? CurrentPreset => _current;
     public string CurrentPresetName => _current?.Name ?? "Perso";
+    public string CurrentPresetTagline => _current?.Tagline ?? "Réglages perso";
+    public string CurrentPresetIcon => _current?.Icon ?? "\uE713";
+    public System.Windows.Media.Brush CurrentPresetTone => _current?.ToneBrush ?? Tones.Brush("volt");
+
+    public const string AllFilter = "Tout", FavoritesFilter = "Favoris";
+
+    public IReadOnlyList<string> PresetFilters { get; } =
+        [AllFilter, FavoritesFilter, .. PresetCategories.All, PresetCategories.Mine];
+
+    /// <summary>Presets affichés (filtre de rayon + recherche).</summary>
+    public ObservableCollection<PresetItem> VisiblePresets { get; } = [];
+
+    public string PresetFilter
+    {
+        get => _presetFilter;
+        set { if (Set(ref _presetFilter, value ?? AllFilter)) RefreshPresetView(); }
+    }
+
+    public string PresetSearch
+    {
+        get => _presetSearch;
+        set { if (Set(ref _presetSearch, value ?? "")) RefreshPresetView(); }
+    }
+
+    public int PresetCount => AllPresets.Count();
+    public string LibraryTitle => $"Bibliothèque de voix · {PresetCount}";
+    public bool NoPresetMatch => VisiblePresets.Count == 0;
+
+    private void RefreshPresetView()
+    {
+        var q = _presetSearch.Trim();
+        var items = AllPresets.Where(p =>
+            (_presetFilter == AllFilter
+             || (_presetFilter == FavoritesFilter && p.IsFavorite)
+             || p.Category == _presetFilter)
+            && (q.Length == 0
+                || p.Name.Contains(q, StringComparison.CurrentCultureIgnoreCase)
+                || p.Tagline.Contains(q, StringComparison.CurrentCultureIgnoreCase)
+                || p.Category.Contains(q, StringComparison.CurrentCultureIgnoreCase)));
+        // Favoris d'abord quand on affiche tout.
+        if (_presetFilter == AllFilter && q.Length == 0) items = items.OrderByDescending(p => p.IsFavorite);
+        VisiblePresets.Clear();
+        foreach (var p in items) VisiblePresets.Add(p);
+        Raise(nameof(NoPresetMatch));
+        Raise(nameof(PresetCount));
+        Raise(nameof(LibraryTitle));
+    }
+
+    public void ToggleFavorite(PresetItem item)
+    {
+        item.IsFavorite = !item.IsFavorite;
+        _settings.Favorites.RemoveAll(n => n == item.Name);
+        if (item.IsFavorite) _settings.Favorites.Add(item.Name);
+        MarkDirty();
+        RefreshPresetView();
+    }
+
+    /// <summary>Favori n°<paramref name="index"/> (raccourcis Ctrl+Alt+F1…F9).</summary>
+    public void ApplyFavorite(int index)
+    {
+        var favs = AllPresets.Where(p => p.IsFavorite).ToList();
+        if (index >= 0 && index < favs.Count) ApplyPreset(favs[index]);
+        else Notify?.Invoke("Pas de favori n°" + (index + 1) + " · cliquez sur l'étoile d'une voix pour l'ajouter");
+    }
     public bool Modified { get => _modified; private set => Set(ref _modified, value); }
 
     public void ApplyPreset(PresetItem item)
@@ -237,7 +326,12 @@ public sealed class MainViewModel : Observable, IDisposable
     /// changer de preset les conserve.
     /// </summary>
     private VoiceSettings KeepMicSettings(VoiceSettings preset) =>
-        preset with { VolumeDb = Voice.VolumeDb, GateOn = Voice.GateOn, GateThresholdDb = Voice.GateThresholdDb };
+        preset with
+        {
+            VolumeDb = Voice.VolumeDb, GateOn = Voice.GateOn, GateThresholdDb = Voice.GateThresholdDb,
+            // Le débruitage IA suit le micro, sauf si la voix l'allume elle-même.
+            DenoiseOn = preset.DenoiseOn || Voice.DenoiseOn, DenoiseAmount = preset.DenoiseOn ? preset.DenoiseAmount : Voice.DenoiseAmount,
+        };
 
     private bool DiffersFromPreset(VoiceSettings v) =>
         _current != null && KeepMicSettings(_current.Preset.Settings) != v;
@@ -266,8 +360,10 @@ public sealed class MainViewModel : Observable, IDisposable
         var item = new PresetItem(preset);
         if (existing != null) UserPresets[UserPresets.IndexOf(existing)] = item;
         else UserPresets.Add(item);
+        item.IsFavorite = _settings.Favorites.Contains(name);
+        RefreshPresetView();
         ApplyPreset(item);
-        Notify?.Invoke($"Preset « {name} » enregistré.");
+        Notify?.Invoke($"Voix enregistrée · « {name} » ajoutée à vos presets");
     }
 
     public void DeletePreset(PresetItem item)
@@ -275,6 +371,8 @@ public sealed class MainViewModel : Observable, IDisposable
         if (!item.IsUser) return;
         _store.Delete(item.Name);
         UserPresets.Remove(item);
+        _settings.Favorites.Remove(item.Name);
+        RefreshPresetView();
         if (_current == item)
         {
             _current = null;
@@ -290,6 +388,7 @@ public sealed class MainViewModel : Observable, IDisposable
         var old = UserPresets.FirstOrDefault(x => x.Name == p.Name);
         if (old != null) UserPresets.Remove(old);
         UserPresets.Add(new PresetItem(p));
+        RefreshPresetView();
         return true;
     }
 
@@ -308,6 +407,8 @@ public sealed class MainViewModel : Observable, IDisposable
             Raise(name);
             Modified = DiffersFromPreset(value);
         }
+        Raise(nameof(ActiveChain));
+        Raise(nameof(LatencyText));
     }
 
     public double VolumeDb { get => Voice.VolumeDb; set => SetVoice(Voice with { VolumeDb = Math.Round(value, 1) }); }
@@ -334,6 +435,220 @@ public sealed class MainViewModel : Observable, IDisposable
     public bool ReverbOn { get => Voice.ReverbOn; set => SetVoice(Voice with { ReverbOn = value }); }
     public double ReverbSize { get => Voice.ReverbSize; set => SetVoice(Voice with { ReverbSize = value }); }
     public double ReverbMix { get => Voice.ReverbMix; set => SetVoice(Voice with { ReverbMix = value }); }
+
+    public double FormantSemitones { get => Voice.FormantSemitones; set => SetVoice(Voice with { FormantSemitones = Math.Round(value, 1) }); }
+    public bool KeepFormants { get => Voice.KeepFormants; set => SetVoice(Voice with { KeepFormants = value }); }
+    public bool DenoiseOn { get => Voice.DenoiseOn; set { SetVoice(Voice with { DenoiseOn = value }); RaiseDenoise(); } }
+    public double DenoiseAmount { get => Voice.DenoiseAmount; set { SetVoice(Voice with { DenoiseAmount = Math.Round(value, 2) }); RaiseDenoise(); } }
+
+    // Réduction de bruit en trois crans (carte du studio) : Doux 35 %, Équilibré 60 %, Maximum 90 %.
+    public bool DenoiseSoft { get => DenoiseAmount < 0.45; set { if (value) DenoiseAmount = 0.35; } }
+    public bool DenoiseBalanced { get => DenoiseAmount is >= 0.45 and < 0.75; set { if (value) DenoiseAmount = 0.6; } }
+    public bool DenoiseMax { get => DenoiseAmount >= 0.75; set { if (value) DenoiseAmount = 0.9; } }
+
+    /// <summary>Atténuation maximale du bruit de fond, comme le débruiteur la calcule (8 à 32 dB).</summary>
+    public string DenoiseDbText => DenoiseOn ? "-" + Math.Round(8 + DenoiseAmount * 24) : "0";
+    public string DenoiseSummary => DenoiseOn ? "Clavier, ventilo et souffle filtrés" : "Désactivée";
+
+    private void RaiseDenoise()
+    {
+        Raise(nameof(DenoiseSoft)); Raise(nameof(DenoiseBalanced)); Raise(nameof(DenoiseMax));
+        Raise(nameof(DenoiseDbText)); Raise(nameof(DenoiseSummary));
+    }
+    public bool LowCutOn { get => Voice.LowCutOn; set => SetVoice(Voice with { LowCutOn = value }); }
+    public double LowCutHz { get => Voice.LowCutHz; set => SetVoice(Voice with { LowCutHz = Math.Round(value) }); }
+    public double EqLowMidDb { get => Voice.EqLowMidDb; set => SetVoice(Voice with { EqLowMidDb = Math.Round(value, 1) }); }
+    public double EqPresenceDb { get => Voice.EqPresenceDb; set => SetVoice(Voice with { EqPresenceDb = Math.Round(value, 1) }); }
+    public bool DeEsserOn { get => Voice.DeEsserOn; set => SetVoice(Voice with { DeEsserOn = value }); }
+    public double DeEsserAmount { get => Voice.DeEsserAmount; set => SetVoice(Voice with { DeEsserAmount = Math.Round(value, 2) }); }
+    public bool AutotuneOn { get => Voice.AutotuneOn; set => SetVoice(Voice with { AutotuneOn = value }); }
+    public int AutotuneKey { get => Voice.AutotuneKey; set => SetVoice(Voice with { AutotuneKey = value }); }
+    public int AutotuneScale { get => Voice.AutotuneScale; set => SetVoice(Voice with { AutotuneScale = value }); }
+    public double AutotuneSpeed { get => Voice.AutotuneSpeed; set => SetVoice(Voice with { AutotuneSpeed = Math.Round(value, 2) }); }
+    public bool HarmonyOn { get => Voice.HarmonyOn; set => SetVoice(Voice with { HarmonyOn = value }); }
+    public double HarmonySemitones { get => Voice.HarmonySemitones; set => SetVoice(Voice with { HarmonySemitones = Math.Round(value) }); }
+    public double HarmonyMix { get => Voice.HarmonyMix; set => SetVoice(Voice with { HarmonyMix = Math.Round(value, 2) }); }
+    public bool WhisperOn { get => Voice.WhisperOn; set => SetVoice(Voice with { WhisperOn = value }); }
+    public double WhisperAmount { get => Voice.WhisperAmount; set => SetVoice(Voice with { WhisperAmount = Math.Round(value, 2) }); }
+    public bool VibratoOn { get => Voice.VibratoOn; set => SetVoice(Voice with { VibratoOn = value }); }
+    public double VibratoRate { get => Voice.VibratoRate; set => SetVoice(Voice with { VibratoRate = Math.Round(value, 1) }); }
+    public double VibratoDepth { get => Voice.VibratoDepth; set => SetVoice(Voice with { VibratoDepth = Math.Round(value, 2) }); }
+    public bool BitcrushOn { get => Voice.BitcrushOn; set => SetVoice(Voice with { BitcrushOn = value }); }
+    public double BitcrushBits { get => Voice.BitcrushBits; set => SetVoice(Voice with { BitcrushBits = Math.Round(value) }); }
+    public double BitcrushRateHz { get => Voice.BitcrushRateHz; set => SetVoice(Voice with { BitcrushRateHz = Math.Round(value / 100) * 100 }); }
+    public bool FilterOn { get => Voice.FilterOn; set => SetVoice(Voice with { FilterOn = value }); }
+    public double FilterLowHz { get => Voice.FilterLowHz; set => SetVoice(Voice with { FilterLowHz = Math.Round(value) }); }
+    public double FilterHighHz { get => Voice.FilterHighHz; set => SetVoice(Voice with { FilterHighHz = Math.Round(value / 10) * 10 }); }
+    public bool ChorusOn { get => Voice.ChorusOn; set => SetVoice(Voice with { ChorusOn = value }); }
+    public double ChorusRate { get => Voice.ChorusRate; set => SetVoice(Voice with { ChorusRate = Math.Round(value, 2) }); }
+    public double ChorusDepth { get => Voice.ChorusDepth; set => SetVoice(Voice with { ChorusDepth = Math.Round(value, 2) }); }
+    public double ChorusMix { get => Voice.ChorusMix; set => SetVoice(Voice with { ChorusMix = Math.Round(value, 2) }); }
+
+    public IReadOnlyList<string> KeyNames => Autotune.KeyNames;
+    public IReadOnlyList<string> ScaleNames => Autotune.ScaleNames;
+
+    /// <summary>Note chantée en ce moment (autotune).</summary>
+    public string DetectedNote
+    {
+        get
+        {
+            double f = Engine.DetectedFrequency;
+            if (f <= 0) return "—";
+            int midi = (int)Math.Round(69 + 12 * Math.Log2(f / 440));
+            return Autotune.KeyNames[((midi % 12) + 12) % 12] + (midi / 12 - 1);
+        }
+    }
+
+    /// <summary>Effets allumés, dans l'ordre de la chaîne (pour la barre « chaîne du signal »).</summary>
+    public IReadOnlyList<string> ActiveChain
+    {
+        get
+        {
+            var v = Voice;
+            var list = new List<string>();
+            void Add(bool on, string name) { if (on) list.Add(name); }
+            Add(v.GateOn, "Anti-bruit");
+            Add(v.LowCutOn, "Coupe-bas");
+            Add(v.DenoiseOn, "Réduction de bruit");
+            Add(v.AutotuneOn, "Autotune");
+            Add(Math.Abs(v.PitchSemitones) > 0.01 || v.Depth > 0.001, "Pitch");
+            Add(Math.Abs(v.FormantSemitones) > 0.01 || (v.KeepFormants && Math.Abs(v.PitchSemitones) > 0.01), "Timbre");
+            Add(v.WhisperOn, "Chuchotement");
+            Add(v.HarmonyOn, "Harmoniseur");
+            Add(v.RobotOn, "Robot");
+            Add(v.VibratoOn, "Vibrato");
+            Add(v.DistortionOn, "Drive");
+            Add(v.BitcrushOn, "8-bit");
+            Add(v.RadioOn, "Radio");
+            Add(v.FilterOn, "Filtre");
+            Add(v.EqOn, "Égaliseur");
+            Add(v.DeEsserOn, "De-esser");
+            Add(v.CompressorOn, "Compresseur");
+            Add(v.ChorusOn, "Chorus");
+            Add(v.EchoOn, "Écho");
+            Add(v.ReverbOn, "Reverb");
+            list.Add("Limiteur");
+            return list;
+        }
+    }
+
+    public string LatencyText => Live ? $"Latence ≈ {Engine.LatencyMs:0} ms" : "";
+
+    /// <summary>Remet tous les effets à zéro (garde volume, anti-bruit et débruitage).</summary>
+    public void ResetEffects()
+    {
+        var normal = Presets.First();
+        ApplyPreset(normal);
+    }
+    // ---------- Studio : A/B, enregistrement, push-to-talk ----------
+
+    private bool _talking;
+    public bool Talking { get => _talking; private set => Set(ref _talking, value); }
+
+    /// <summary>Inverse de <see cref="Bypass"/> (interrupteur de la carte « voix active »).</summary>
+    public bool EffectsOn { get => !_bypass; set => Bypass = !value; }
+
+    /// <summary>Votre voix sans effets, pour comparer (A/B).</summary>
+    public bool Bypass
+    {
+        get => _bypass;
+        set
+        {
+            if (!Set(ref _bypass, value)) return;
+            Raise(nameof(EffectsOn));
+            Engine.Bypass = value;
+            Notify?.Invoke(value ? "Effets coupés · vous entendez votre vraie voix (A/B)" : "Effets rallumés");
+        }
+    }
+
+    public bool IsRecording => Engine.IsRecording;
+    public string RecordingTime => Engine.CurrentRecording is { } r ? r.Duration.ToString(@"mm\:ss") : "00:00";
+
+    public string RecordingsFolder
+    {
+        get => string.IsNullOrWhiteSpace(_settings.RecordingsFolder)
+            ? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyMusic), "se7en Voice")
+            : _settings.RecordingsFolder!;
+        set { _settings.RecordingsFolder = value; MarkDirty(); Raise(); }
+    }
+
+    public void ToggleRecording()
+    {
+        if (Engine.IsRecording)
+        {
+            var path = Engine.StopRecording();
+            Raise(nameof(IsRecording));
+            if (path != null) Notify?.Invoke("Enregistrement sauvegardé · " + Path.GetFileName(path));
+            return;
+        }
+        if (!Live)
+        {
+            Notify?.Invoke("Le micro n'est pas actif : impossible d'enregistrer.");
+            return;
+        }
+        try
+        {
+            Engine.StartRecording(RecordingsFolder);
+            Notify?.Invoke("Enregistrement lancé · CTRL+ALT+R pour arrêter");
+        }
+        catch (Exception ex) { Notify?.Invoke("Impossible d'enregistrer : " + ex.Message); }
+        Raise(nameof(IsRecording));
+    }
+
+    public bool PushToTalkOn
+    {
+        get => _settings.PushToTalkOn;
+        set
+        {
+            _settings.PushToTalkOn = value;
+            MarkDirty();
+            Raise();
+            UpdateKeyTimer();
+        }
+    }
+
+    public string PushToTalkKeyName => CapturingKey ? "Appuie sur une touche…" : KeyWatcher.NameOf(_settings.PushToTalkKey);
+
+    public bool CapturingKey { get => _capturingKey; private set { Set(ref _capturingKey, value); Raise(nameof(PushToTalkKeyName)); } }
+
+    /// <summary>La prochaine touche ou bouton de souris enfoncé devient la touche de push-to-talk.</summary>
+    public void StartKeyCapture()
+    {
+        CapturingKey = true;
+        _keyCaptureTicks = 0;
+        UpdateKeyTimer();
+    }
+
+    private void UpdateKeyTimer()
+    {
+        bool need = _settings.PushToTalkOn || _capturingKey;
+        if (need && !_keyTimer.IsEnabled) _keyTimer.Start();
+        if (!need) _keyTimer.Stop();
+        Engine.TalkOpen = !_settings.PushToTalkOn;
+    }
+
+    private void KeyTick()
+    {
+        if (_capturingKey)
+        {
+            // On ignore les 150 premières ms : le clic qui a lancé la capture.
+            if (++_keyCaptureTicks < 10) return;
+            if (KeyWatcher.FirstPressed() is int vk)
+            {
+                _settings.PushToTalkKey = vk;
+                MarkDirty();
+                CapturingKey = false;
+                UpdateKeyTimer();
+                Notify?.Invoke("Push-to-talk activé · maintenez « " + KeyWatcher.NameOf(vk) + " » pour parler.");
+            }
+            else if (_keyCaptureTicks > 600) { CapturingKey = false; UpdateKeyTimer(); }
+            return;
+        }
+        if (_settings.PushToTalkOn) Engine.TalkOpen = KeyWatcher.IsDown(_settings.PushToTalkKey);
+    }
+
+    /// <summary>La fenêtre affiche la table de mixage (vu-mètres à rafraîchir).</summary>
+    public bool MixerVisible { get => _mixerVisible; set => _mixerVisible = value; }
 
     // ---------- Soundboard ----------
 
@@ -434,11 +749,11 @@ public sealed class MainViewModel : Observable, IDisposable
         if (CableRenamer.RequestElevatedRename())
         {
             RefreshDevices(restart: false);
-            Notify?.Invoke("C'est fait ! Dans Discord, choisis « " + CableRenamer.MicName + " » comme micro.");
+            Notify?.Invoke("Micro renommé · dans Discord, choisissez « " + CableRenamer.MicName + " »");
         }
         else
         {
-            Notify?.Invoke("Renommage annulé. Tu peux quand même choisir « CABLE Output » dans Discord.");
+            Notify?.Invoke("Renommage annulé · vous pouvez quand même choisir « CABLE Output » dans Discord");
         }
     }
 
@@ -455,6 +770,9 @@ public sealed class MainViewModel : Observable, IDisposable
     {
         _meterTimer.Stop();
         _saveTimer.Stop();
+        _keyTimer.Stop();
+        Engine.StopRecording();
+        Mixer.Dispose();
         _settings.Save();
         Engine.Dispose();
         Devices.Dispose();

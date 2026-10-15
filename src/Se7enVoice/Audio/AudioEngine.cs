@@ -1,3 +1,4 @@
+using System.IO;
 using System.Runtime.InteropServices;
 using NAudio.CoreAudioApi;
 using NAudio.Wave;
@@ -19,8 +20,13 @@ public sealed class AudioEngine : IDisposable
     private Limiter? _limiter;
     private float[] _mono = [], _voice = [];
     private VoiceSettings _settings = new();
-    private volatile bool _muted, _soundsToMonitor = true;
-    private float _inPeak, _outPeak;
+    private volatile bool _muted, _soundsToMonitor = true, _bypass, _talkOpen = true;
+    private float _inPeak, _outPeak, _appPeak, _talkGain = 1, _appsGain = 0.5f;
+    private volatile ProcessLoopbackCapture[] _apps = [];
+    private float[] _appTmp = [];
+    private volatile Recorder? _recorder;
+    private readonly float[] _scope = new float[4096];
+    private int _scopePos;
 
     public Soundboard Soundboard { get; } = new();
 
@@ -45,13 +51,89 @@ public sealed class AudioEngine : IDisposable
 
     public bool Muted { get => _muted; set => _muted = value; }
     public bool SoundsToMonitor { get => _soundsToMonitor; set => _soundsToMonitor = value; }
+    /// <summary>Comparaison A/B : la voix passe sans effets (le limiteur reste).</summary>
+    public bool Bypass { get => _bypass; set => _bypass = value; }
+    /// <summary>Push-to-talk : faux tant que la touche n'est pas enfoncée.</summary>
+    public bool TalkOpen { get => _talkOpen; set => _talkOpen = value; }
+    /// <summary>Volume des applis envoyées dans le micro (gain linéaire).</summary>
+    public float AppsGain { get => _appsGain; set => _appsGain = value; }
+
+    /// <summary>Retard total estimé micro → micro virtuel, en ms.</summary>
+    public double LatencyMs => 10 + 20 + (_chain?.LatencyMs ?? 0);
+
+    /// <summary>Note chantée détectée par l'autotune (Hz), 0 sinon.</summary>
+    public double DetectedFrequency => _chain?.DetectedFrequency ?? 0;
+
+    public bool IsRecording => _recorder != null;
+    public Recorder? CurrentRecording => _recorder;
+
+    /// <summary>Copie les derniers échantillons envoyés au micro virtuel (pour l'analyseur de spectre).</summary>
+    public void CopyScope(float[] dest)
+    {
+        int n = Math.Min(dest.Length, _scope.Length);
+        int pos = Volatile.Read(ref _scopePos);
+        for (int i = 0; i < n; i++) dest[i] = _scope[(pos - n + i) & (_scope.Length - 1)];
+    }
+
+    // ---------- Applis envoyées dans le micro ----------
+
+    /// <summary>Envoie le son de l'appli <paramref name="processId"/> dans le micro virtuel. Lève une exception si Windows refuse.</summary>
+    public void AddApp(int processId)
+    {
+        lock (_lock)
+        {
+            if (_apps.Any(a => a.ProcessId == processId) || SampleRate == 0) return;
+            var cap = new ProcessLoopbackCapture(processId, SampleRate);
+            _apps = [.. _apps, cap];
+        }
+    }
+
+    public void RemoveApp(int processId)
+    {
+        lock (_lock)
+        {
+            var cap = _apps.FirstOrDefault(a => a.ProcessId == processId);
+            if (cap == null) return;
+            _apps = _apps.Where(a => a != cap).ToArray();
+            cap.Dispose();
+        }
+    }
+
+    public IReadOnlyCollection<int> AppIds => _apps.Select(a => a.ProcessId).ToArray();
+
+    private void ClearApps()
+    {
+        var apps = _apps;
+        _apps = [];
+        foreach (var a in apps) a.Dispose();
+    }
+
+    // ---------- Enregistrement ----------
+
+    public string StartRecording(string folder)
+    {
+        StopRecording();
+        var path = Path.Combine(folder, $"se7en Voice {DateTime.Now:yyyy-MM-dd HH-mm-ss}.wav");
+        _recorder = new Recorder(path, SampleRate == 0 ? 48000 : SampleRate);
+        return path;
+    }
+
+    public string? StopRecording()
+    {
+        var r = _recorder;
+        _recorder = null;
+        if (r == null) return null;
+        r.Dispose();
+        return r.Path;
+    }
 
     /// <summary>Niveaux crête (0..1) depuis le dernier appel, pour les vu-mètres.</summary>
-    public (float input, float output) TakeLevels()
+    public (float input, float output, float apps) TakeLevels()
     {
         float i = Interlocked.Exchange(ref _inPeak, 0);
         float o = Interlocked.Exchange(ref _outPeak, 0);
-        return (i, o);
+        float a = Interlocked.Exchange(ref _appPeak, 0);
+        return (i, o, a);
     }
 
     public void Start(MMDevice microphone, MMDevice? cable, MMDevice? monitor)
@@ -72,6 +154,7 @@ public sealed class AudioEngine : IDisposable
                 if (e.Exception != null) Faulted?.Invoke("Le micro ne répond plus : " + e.Exception.Message);
             };
 
+            ClearApps(); // les captures d'applis sont liées à l'ancienne fréquence : le mixeur les relance
             if (cable != null) _cable = Output.Open(cable, SampleRate, this);
             if (monitor != null) _monitor = Output.Open(monitor, SampleRate, this);
 
@@ -108,6 +191,7 @@ public sealed class AudioEngine : IDisposable
             _cable?.Dispose(); _cable = null;
             _monitor?.Dispose(); _monitor = null;
             Soundboard.StopAll();
+            ClearApps();
         }
     }
 
@@ -122,8 +206,19 @@ public sealed class AudioEngine : IDisposable
         var voice = _mono.AsSpan(0, frames);
         StorePeak(ref _inPeak, voice);
 
-        chain.Process(voice);
-        if (_muted) voice.Clear();
+        if (!_bypass) chain.Process(voice);
+
+        // Muet / push-to-talk : fondu de 5 ms pour éviter les clics.
+        float target = _muted || !_talkOpen ? 0 : 1;
+        if (target != _talkGain || target == 0)
+        {
+            float step = 1f / (SampleRate * 0.005f);
+            for (int i = 0; i < voice.Length; i++)
+            {
+                _talkGain = target > _talkGain ? Math.Min(target, _talkGain + step) : Math.Max(target, _talkGain - step);
+                voice[i] *= _talkGain;
+            }
+        }
 
         // Les sons de la soundboard passent après les effets : ils ne sont pas déformés.
         if (_voice.Length < frames) _voice = new float[frames];
@@ -132,11 +227,31 @@ public sealed class AudioEngine : IDisposable
         bool sounds = Soundboard.MixInto(voice);
         if (sounds && _soundsToMonitor) voice.CopyTo(monitorMix);
 
+        // Applis envoyées dans le micro (musique…) : pas dans le retour casque, on les entend déjà.
+        var apps = _apps;
+        if (apps.Length > 0)
+        {
+            if (_appTmp.Length < frames) _appTmp = new float[frames * 2];
+            var tmp = _appTmp.AsSpan(0, frames);
+            float g = _appsGain;
+            foreach (var app in apps)
+            {
+                app.Ring.Read(tmp);
+                for (int i = 0; i < frames; i++) voice[i] += tmp[i] * g;
+                StorePeak(ref _appPeak, tmp);
+            }
+        }
+
         limiter.Process(voice);
         StorePeak(ref _outPeak, voice);
 
         _cable?.Ring.Write(voice);
         _monitor?.Ring.Write(monitorMix);
+        _recorder?.Write(voice);
+
+        int pos = _scopePos;
+        foreach (var v in voice) _scope[pos++ & (_scope.Length - 1)] = v;
+        Volatile.Write(ref _scopePos, pos & (_scope.Length - 1));
     }
 
     private static void StorePeak(ref float target, ReadOnlySpan<float> s)
@@ -178,7 +293,11 @@ public sealed class AudioEngine : IDisposable
         return frames;
     }
 
-    public void Dispose() => Stop();
+    public void Dispose()
+    {
+        StopRecording();
+        Stop();
+    }
 
     /// <summary>Une sortie WASAPI alimentée par un <see cref="ResamplingRing"/>.</summary>
     private sealed class Output : IWaveProvider, IDisposable

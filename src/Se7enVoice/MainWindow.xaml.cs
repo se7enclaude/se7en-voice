@@ -21,6 +21,7 @@ public partial class MainWindow : Window
     private readonly Forms.ToolStripMenuItem _trayMute;
     private GlobalHotkeys? _hotkeys;
     private bool _exiting, _trayHintShown;
+    private readonly System.Windows.Threading.DispatcherTimer _spectrumTimer;
 
     public MainWindow(bool startMinimized)
     {
@@ -28,12 +29,19 @@ public partial class MainWindow : Window
         _vm = new MainViewModel();
         DataContext = _vm;
 
-        _vm.PresetApplied += ShowOnomatopoeia;
+        _vm.PresetApplied += ShowPresetToast;
         _vm.Notify += ShowToast;
         _vm.PropertyChanged += (_, e) =>
         {
             if (e.PropertyName is nameof(MainViewModel.Muted) or "") _trayMute!.Checked = _vm.Muted;
         };
+
+        // Analyseur de spectre : seulement quand la page Studio est à l'écran.
+        _spectrumTimer = new System.Windows.Threading.DispatcherTimer(TimeSpan.FromMilliseconds(33), System.Windows.Threading.DispatcherPriority.Render,
+            (_, _) => { if (IsVisible && WindowState != WindowState.Minimized && PageVoice.IsVisible) Spectrum.Update(_vm.Engine.CopyScope, _vm.Engine.SampleRate); },
+            Dispatcher);
+        IsVisibleChanged += (_, _) => UpdateMixerVisible();
+        StateChanged += (_, _) => UpdateMixerVisible();
 
         Drop += OnDrop;
         DragOver += (_, e) =>
@@ -48,6 +56,8 @@ public partial class MainWindow : Window
         _trayMute = new Forms.ToolStripMenuItem("Muet", null, (_, _) => _vm.Muted = !_vm.Muted);
         menu.Items.Add(_trayMute);
         menu.Items.Add("Voix suivante", null, (_, _) => _vm.StepPreset(+1));
+        menu.Items.Add("A/B : voix sans effets", null, (_, _) => _vm.Bypass = !_vm.Bypass);
+        menu.Items.Add("Enregistrer / arrêter", null, (_, _) => _vm.ToggleRecording());
         menu.Items.Add(new Forms.ToolStripSeparator());
         menu.Items.Add("Quitter", null, (_, _) => ExitApp());
         _tray = new Forms.NotifyIcon
@@ -91,6 +101,13 @@ public partial class MainWindow : Window
         Reg(Key.Left, "Ctrl+Alt+←", () => _vm.StepPreset(-1));
         Reg(Key.N, "Ctrl+Alt+N", () => { var n = _vm.Presets.FirstOrDefault(); if (n != null) _vm.ApplyPreset(n); });
         Reg(Key.D0, "Ctrl+Alt+0", _vm.StopSounds);
+        Reg(Key.B, "Ctrl+Alt+B", () => _vm.Bypass = !_vm.Bypass);
+        Reg(Key.R, "Ctrl+Alt+R", _vm.ToggleRecording);
+        for (int i = 0; i < 9; i++)
+        {
+            int index = i;
+            Reg(Key.F1 + i, $"Ctrl+Alt+F{i + 1}", () => _vm.ApplyFavorite(index));
+        }
         for (int i = 0; i < 9; i++)
         {
             int index = i;
@@ -119,11 +136,12 @@ public partial class MainWindow : Window
             {
                 _trayHintShown = true;
                 _tray.ShowBalloonTip(4000, "se7en Voice tourne toujours",
-                    "Ta voix reste active. Clic droit sur l'icône près de l'horloge pour quitter.", Forms.ToolTipIcon.Info);
+                    "Votre voix reste active. Clic droit sur l'icône près de l'horloge pour quitter.", Forms.ToolTipIcon.Info);
             }
             return;
         }
         _hotkeys?.Dispose();
+        _spectrumTimer.Stop();
         _tray.Visible = false;
         _tray.Dispose();
         _vm.Dispose();
@@ -157,6 +175,17 @@ public partial class MainWindow : Window
         PageEffects.Visibility = TabEffects.IsChecked == true ? Visibility.Visible : Visibility.Collapsed;
         PageSounds.Visibility = TabSounds.IsChecked == true ? Visibility.Visible : Visibility.Collapsed;
         PageSettings.Visibility = TabSettings.IsChecked == true ? Visibility.Visible : Visibility.Collapsed;
+        PageMixer.Visibility = TabMixer.IsChecked == true ? Visibility.Visible : Visibility.Collapsed;
+        UpdateMixerVisible();
+        if (TabMixer.IsChecked == true) _vm.Mixer.Scan();
+    }
+
+    private void UpdateMixerVisible()
+    {
+        if (_vm == null) return;
+        bool shown = IsVisible && WindowState != WindowState.Minimized;
+        _vm.MixerVisible = shown && TabMixer.IsChecked == true;
+        if (shown) _spectrumTimer.Start(); else _spectrumTimer.Stop();
     }
 
     private void CableBadge_Click(object sender, RoutedEventArgs e) => TabSettings.IsChecked = true;
@@ -166,6 +195,43 @@ public partial class MainWindow : Window
     private void PresetTile_Click(object sender, RoutedEventArgs e)
     {
         if ((sender as FrameworkElement)?.Tag is PresetItem item) _vm.ApplyPreset(item);
+    }
+
+    private void Favorite_Click(object sender, RoutedEventArgs e)
+    {
+        if ((sender as FrameworkElement)?.Tag is PresetItem item) _vm.ToggleFavorite(item);
+    }
+
+    private void Filter_Checked(object sender, RoutedEventArgs e)
+    {
+        if (sender is RadioButton { Content: string f }) _vm.PresetFilter = f;
+    }
+
+    private void Filter_Loaded(object sender, RoutedEventArgs e)
+    {
+        if (sender is RadioButton { Content: string f } rb && f == _vm.PresetFilter) rb.IsChecked = true;
+    }
+
+    private void ResetEffects_Click(object sender, RoutedEventArgs e) => _vm.ResetEffects();
+
+    private void Record_Click(object sender, RoutedEventArgs e) => _vm.ToggleRecording();
+
+    private void CaptureKey_Click(object sender, RoutedEventArgs e) => _vm.StartKeyCapture();
+
+    private void OpenRecordings_Click(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            System.IO.Directory.CreateDirectory(_vm.RecordingsFolder);
+            Process.Start(new ProcessStartInfo(_vm.RecordingsFolder) { UseShellExecute = true });
+        }
+        catch (Exception ex) { ShowToast("Impossible d'ouvrir le dossier : " + ex.Message); }
+    }
+
+    private void ChooseRecordings_Click(object sender, RoutedEventArgs e)
+    {
+        var dlg = new OpenFolderDialog { Title = "Dossier des enregistrements", InitialDirectory = _vm.RecordingsFolder };
+        if (dlg.ShowDialog(this) == true) _vm.RecordingsFolder = dlg.FolderName;
     }
 
     private void SavePreset_Click(object sender, RoutedEventArgs e)
@@ -181,7 +247,7 @@ public partial class MainWindow : Window
         if (name.Length == 0) { PresetNameBox.Focus(); return; }
         if (_vm.Presets.Any(p => string.Equals(p.Name, name, StringComparison.CurrentCultureIgnoreCase)))
         {
-            ShowToast("Ce nom est déjà pris par une voix de base, choisis-en un autre.");
+            ShowToast("Ce nom est déjà pris par une voix de base · choisissez-en un autre");
             return;
         }
         SaveDialog.Visibility = Visibility.Collapsed;
@@ -210,7 +276,7 @@ public partial class MainWindow : Window
         try
         {
             PresetStore.Export(item.Preset, dlg.FileName);
-            ShowToast("Preset exporté ! Envoie le fichier à ton ami, il n'a qu'à cliquer sur IMPORTER.");
+            ShowToast("Voix exportée · envoyez le fichier à un ami, il n'aura qu'à cliquer sur « Importer »");
         }
         catch (Exception ex) { ShowToast("Export impossible : " + ex.Message); }
     }
@@ -225,7 +291,7 @@ public partial class MainWindow : Window
         var dlg = new OpenFileDialog { Filter = "Preset se7en Voice (*.json)|*.json", Multiselect = true, Title = "Importer des presets" };
         if (dlg.ShowDialog(this) != true) return;
         int ok = dlg.FileNames.Count(_vm.ImportPreset);
-        ShowToast(ok > 0 ? $"{ok} preset(s) ajouté(s) dans « Mes presets »." : "Ce fichier n'est pas un preset se7en Voice.");
+        ShowToast(ok > 0 ? $"{ok} voix ajoutée(s) · dans « Mes presets »" : "Ce fichier n'est pas un preset se7en Voice.");
     }
 
     // ---------- Soundboard ----------
@@ -246,7 +312,7 @@ public partial class MainWindow : Window
         if (e.Data.GetData(DataFormats.FileDrop) is not string[] files) return;
         var presets = files.Where(f => f.EndsWith(".json", StringComparison.OrdinalIgnoreCase)).ToList();
         int imported = presets.Count(_vm.ImportPreset);
-        if (imported > 0) ShowToast($"{imported} preset(s) importé(s).");
+        if (imported > 0) ShowToast($"{imported} voix importée(s)");
         var sounds = files.Except(presets).ToList();
         if (sounds.Count > 0)
         {
@@ -276,8 +342,8 @@ public partial class MainWindow : Window
     {
         _vm.RefreshDevices(restart: true);
         ShowToast(_vm.CableFound
-            ? "Micro virtuel trouvé ! Choisis « " + _vm.CableName + " » dans Discord."
-            : "Toujours pas trouvé. Pense à redémarrer le PC après l'installation.");
+            ? "Micro virtuel trouvé · choisissez « " + _vm.CableName + " » dans Discord"
+            : "Micro virtuel toujours absent · redémarrez le PC après l'installation");
     }
 
     private void RenameCable_Click(object sender, RoutedEventArgs e)
@@ -299,37 +365,8 @@ public partial class MainWindow : Window
         if (!IsVisible) _tray.ShowBalloonTip(3000, "se7en Voice", message, Forms.ToolTipIcon.None);
     }
 
-    private static string WordFor(PresetItem p) => p.Name switch
+    private void ShowPresetToast(PresetItem p)
     {
-        "Normal" => "OK!",
-        "Robot" => "BZZT!",
-        "Alien" => "ZWOOP!",
-        "Démon" => "GRAAH!",
-        "Chipmunk" => "SKWEE!",
-        "Radio" => "KSSHH!",
-        "Grotte" => "OHÉÉÉ!",
-        "Stade" or "Géant" => "BOOOM!",
-        "Voix grave" => "WHOMP!",
-        "Streamer" => "LIVE!",
-        _ => "ZAP!",
-    };
-
-    private void ShowOnomatopoeia(PresetItem p)
-    {
-        if (!IsVisible) return;
-        Onomatopoeia.Text = WordFor(p);
-        var snap = new BackEase { EasingMode = EasingMode.EaseOut, Amplitude = 0.6 };
-        var dur = TimeSpan.FromMilliseconds(320);
-
-        var opacity = new DoubleAnimationUsingKeyFrames();
-        opacity.KeyFrames.Add(new LinearDoubleKeyFrame(1, KeyTime.FromTimeSpan(TimeSpan.FromMilliseconds(80))));
-        opacity.KeyFrames.Add(new LinearDoubleKeyFrame(1, KeyTime.FromTimeSpan(TimeSpan.FromMilliseconds(750))));
-        opacity.KeyFrames.Add(new LinearDoubleKeyFrame(0, KeyTime.FromTimeSpan(TimeSpan.FromMilliseconds(950))));
-        Onomatopoeia.BeginAnimation(OpacityProperty, opacity);
-
-        var scale = new DoubleAnimation(0.4, 1, dur) { EasingFunction = snap };
-        OnoScale.BeginAnimation(System.Windows.Media.ScaleTransform.ScaleXProperty, scale);
-        OnoScale.BeginAnimation(System.Windows.Media.ScaleTransform.ScaleYProperty, scale);
-        OnoRotate.BeginAnimation(System.Windows.Media.RotateTransform.AngleProperty, new DoubleAnimation(-14, -8, dur) { EasingFunction = snap });
+        if (IsVisible) ShowToast($"Voix appliquée · « {p.Name} » est active sur votre micro");
     }
 }

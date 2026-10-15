@@ -11,6 +11,8 @@ public abstract class Effect
     public abstract void Process(Span<float> buffer);
     public virtual void Reset() { }
 
+    public void ProcessIf(Span<float> buffer) { if (Enabled) Process(buffer); }
+
     protected float Coef(double ms) => (float)Math.Exp(-1.0 / (SampleRate * ms / 1000.0));
 }
 
@@ -66,25 +68,263 @@ public sealed class NoiseGate : Effect
     public override void Reset() { _env = 0; _gain = 0; _hold = 0; }
 }
 
-/// <summary>Égaliseur 3 bandes : graves 200 Hz, médiums 1 kHz, aigus 4 kHz.</summary>
+/// <summary>Égaliseur 5 bandes : graves 120 Hz, bas-médiums 350 Hz, médiums 1,2 kHz, présence 3 kHz, aigus 6 kHz.</summary>
 public sealed class Equalizer(int sampleRate) : Effect(sampleRate)
 {
-    private readonly Biquad _low = new(), _mid = new(), _high = new();
+    private readonly Biquad _low = new(), _lowMid = new(), _mid = new(), _presence = new(), _high = new();
 
-    public void Set(double lowDb, double midDb, double highDb)
+    public void Set(double lowDb, double lowMidDb, double midDb, double presenceDb, double highDb)
     {
-        _low.SetLowShelf(SampleRate, 200, lowDb);
-        _mid.SetPeak(SampleRate, 1000, 0.8, midDb);
-        _high.SetHighShelf(SampleRate, 4000, highDb);
+        _low.SetLowShelf(SampleRate, 120, lowDb);
+        _lowMid.SetPeak(SampleRate, 350, 0.9, lowMidDb);
+        _mid.SetPeak(SampleRate, 1200, 0.9, midDb);
+        _presence.SetPeak(SampleRate, 3000, 1.0, presenceDb);
+        _high.SetHighShelf(SampleRate, 6000, highDb);
     }
 
     public override void Process(Span<float> buffer)
     {
         for (int i = 0; i < buffer.Length; i++)
-            buffer[i] = _high.Process(_mid.Process(_low.Process(buffer[i])));
+            buffer[i] = _high.Process(_presence.Process(_mid.Process(_lowMid.Process(_low.Process(buffer[i])))));
     }
 
-    public override void Reset() { _low.Reset(); _mid.Reset(); _high.Reset(); }
+    public override void Reset() { _low.Reset(); _lowMid.Reset(); _mid.Reset(); _presence.Reset(); _high.Reset(); }
+}
+
+/// <summary>Coupe-bas 24 dB/oct (Butterworth) : enlève les vibrations, le pied du micro, les « pop ».</summary>
+public sealed class LowCut(int sampleRate) : Effect(sampleRate)
+{
+    private readonly Biquad _a = new(), _b = new();
+
+    public double Frequency
+    {
+        set
+        {
+            _a.SetHighPass(SampleRate, value, 0.541);
+            _b.SetHighPass(SampleRate, value, 1.307);
+        }
+    }
+
+    public override void Process(Span<float> buffer)
+    {
+        for (int i = 0; i < buffer.Length; i++) buffer[i] = _b.Process(_a.Process(buffer[i]));
+    }
+
+    public override void Reset() { _a.Reset(); _b.Reset(); }
+}
+
+/// <summary>Filtre passe-bande 24 dB/oct : téléphone, mégaphone, sous l'eau, derrière un mur…</summary>
+public sealed class BandFilter(int sampleRate) : Effect(sampleRate)
+{
+    private readonly Biquad _hp1 = new(), _hp2 = new(), _lp1 = new(), _lp2 = new();
+
+    public void Set(double lowHz, double highHz)
+    {
+        lowHz = Math.Clamp(lowHz, 20, 4000);
+        highHz = Math.Clamp(highHz, lowHz * 1.2, SampleRate * 0.45);
+        _hp1.SetHighPass(SampleRate, lowHz, 0.541); _hp2.SetHighPass(SampleRate, lowHz, 1.307);
+        _lp1.SetLowPass(SampleRate, highHz, 0.541); _lp2.SetLowPass(SampleRate, highHz, 1.307);
+    }
+
+    public override void Process(Span<float> buffer)
+    {
+        for (int i = 0; i < buffer.Length; i++)
+            buffer[i] = _lp2.Process(_lp1.Process(_hp2.Process(_hp1.Process(buffer[i])))) * 1.25f;
+    }
+
+    public override void Reset() { _hp1.Reset(); _hp2.Reset(); _lp1.Reset(); _lp2.Reset(); }
+}
+
+/// <summary>De-esser : adoucit les « sss » et « chhh » qui sifflent (aigus au-dessus de 5 kHz).</summary>
+public sealed class DeEsser : Effect
+{
+    private readonly Biquad _split = new();
+    private readonly float _attack, _release;
+    private float _env, _threshold = 0.05f, _strength = 0.7f;
+
+    public DeEsser(int sampleRate) : base(sampleRate)
+    {
+        _split.SetHighPass(sampleRate, 5000, 0.707);
+        _attack = Coef(1); _release = Coef(60);
+    }
+
+    public double Amount
+    {
+        set
+        {
+            double a = Math.Clamp(value, 0, 1);
+            _threshold = (float)Math.Pow(10, (-22 - a * 16) / 20);
+            _strength = (float)(0.5 + a * 0.5);
+        }
+    }
+
+    public override void Process(Span<float> buffer)
+    {
+        for (int i = 0; i < buffer.Length; i++)
+        {
+            float x = buffer[i];
+            float hi = _split.Process(x);
+            float lo = x - hi;
+            float a = Math.Abs(hi);
+            float c = a > _env ? _attack : _release;
+            _env = c * _env + (1 - c) * a;
+            float g = _env > _threshold ? MathF.Pow(_threshold / _env, _strength) : 1;
+            buffer[i] = lo + hi * g;
+        }
+    }
+
+    public override void Reset() { _split.Reset(); _env = 0; }
+}
+
+/// <summary>Ligne à retard circulaire avec lecture interpolée (chorus, vibrato).</summary>
+internal sealed class DelayLine
+{
+    private readonly float[] _buf;
+    private readonly int _mask;
+    private int _write;
+
+    public DelayLine(int minLength)
+    {
+        int size = 1;
+        while (size < minLength + 4) size <<= 1;
+        _buf = new float[size];
+        _mask = size - 1;
+    }
+
+    public void Write(float x) { _buf[_write] = x; _write = (_write + 1) & _mask; }
+
+    /// <summary>Valeur écrite il y a <paramref name="delay"/> échantillons.</summary>
+    public float Read(double delay)
+    {
+        double pos = _write - 1 - delay;
+        int i0 = (int)Math.Floor(pos);
+        float f = (float)(pos - i0);
+        float a = _buf[i0 & _mask], b = _buf[(i0 + 1) & _mask];
+        return a + (b - a) * f;
+    }
+
+    public void Clear() => Array.Clear(_buf);
+}
+
+/// <summary>Chorus 2 voix : effet « plusieurs personnes », cyborg, son plus large.</summary>
+public sealed class Chorus : Effect
+{
+    private readonly DelayLine _line;
+    private double _ph1, _ph2, _inc;
+    private float _depth = 0.5f, _mix = 0.5f;
+
+    public Chorus(int sampleRate) : base(sampleRate) => _line = new DelayLine((int)(sampleRate * 0.04));
+
+    public void Set(double rateHz, double depth, double mix)
+    {
+        _inc = 2 * Math.PI * Math.Clamp(rateHz, 0.05, 8) / SampleRate;
+        _depth = (float)Math.Clamp(depth, 0, 1);
+        _mix = (float)Math.Clamp(mix, 0, 1);
+    }
+
+    public override void Process(Span<float> buffer)
+    {
+        double baseDelay = SampleRate * 0.016, swing = SampleRate * 0.007 * _depth;
+        for (int i = 0; i < buffer.Length; i++)
+        {
+            float x = buffer[i];
+            _line.Write(x);
+            float v1 = _line.Read(baseDelay + swing * Math.Sin(_ph1));
+            float v2 = _line.Read(baseDelay * 1.3 + swing * Math.Sin(_ph2));
+            buffer[i] = x * (1 - 0.35f * _mix) + (v1 + v2) * 0.42f * _mix;
+            _ph1 += _inc; _ph2 += _inc * 1.13;
+            if (_ph1 > 2 * Math.PI) _ph1 -= 2 * Math.PI;
+            if (_ph2 > 2 * Math.PI) _ph2 -= 2 * Math.PI;
+        }
+    }
+
+    public override void Reset() => _line.Clear();
+}
+
+/// <summary>Vibrato : la hauteur ondule (voix tremblante, vieillard, fantôme, sous l'eau).</summary>
+public sealed class Vibrato : Effect
+{
+    private readonly DelayLine _line;
+    private double _ph, _inc;
+    private float _depth = 0.3f;
+
+    public Vibrato(int sampleRate) : base(sampleRate) => _line = new DelayLine((int)(sampleRate * 0.02));
+
+    public void Set(double rateHz, double depth)
+    {
+        _inc = 2 * Math.PI * Math.Clamp(rateHz, 0.5, 12) / SampleRate;
+        _depth = (float)Math.Clamp(depth, 0, 1);
+    }
+
+    public override void Process(Span<float> buffer)
+    {
+        double center = SampleRate * 0.006, swing = SampleRate * 0.0045 * _depth;
+        for (int i = 0; i < buffer.Length; i++)
+        {
+            _line.Write(buffer[i]);
+            buffer[i] = _line.Read(center + swing * Math.Sin(_ph));
+            _ph += _inc;
+            if (_ph > 2 * Math.PI) _ph -= 2 * Math.PI;
+        }
+    }
+
+    public override void Reset() => _line.Clear();
+}
+
+/// <summary>Bitcrusher : son de vieille console 8-bit (moins de bits, moins d'échantillons).</summary>
+public sealed class Bitcrusher(int sampleRate) : Effect(sampleRate)
+{
+    private double _phase, _step = 0.25;
+    private float _hold, _quant = 1f / 128;
+
+    public void Set(double bits, double rateHz)
+    {
+        _quant = (float)(2 / Math.Pow(2, Math.Clamp(bits, 2, 16)));
+        _step = Math.Clamp(rateHz, 1000, SampleRate) / SampleRate;
+    }
+
+    public override void Process(Span<float> buffer)
+    {
+        for (int i = 0; i < buffer.Length; i++)
+        {
+            _phase += _step;
+            if (_phase >= 1)
+            {
+                _phase -= 1;
+                _hold = MathF.Round(buffer[i] / _quant) * _quant;
+            }
+            buffer[i] = _hold;
+        }
+    }
+
+    public override void Reset() { _phase = 0; _hold = 0; }
+}
+
+/// <summary>Harmoniseur : ajoute une deuxième voix décalée (octave en dessous = monstre, au-dessus = chœur).</summary>
+public sealed class Harmonizer : Effect
+{
+    private readonly PitchShifter _shifter;
+    private float[] _tmp = new float[1024];
+    private float _mix = 0.5f;
+
+    public Harmonizer(int sampleRate) : base(sampleRate) => _shifter = new PitchShifter(sampleRate);
+
+    public void Set(double semitones, double mix)
+    {
+        _shifter.Semitones = Math.Abs(semitones) < 0.01 ? 0.01 : semitones;
+        _mix = (float)Math.Clamp(mix, 0, 1);
+    }
+
+    public override void Process(Span<float> buffer)
+    {
+        if (_tmp.Length < buffer.Length) _tmp = new float[buffer.Length * 2];
+        var voice = _tmp.AsSpan(0, buffer.Length);
+        buffer.CopyTo(voice);
+        _shifter.Process(voice);
+        for (int i = 0; i < buffer.Length; i++) buffer[i] = buffer[i] * (1 - 0.3f * _mix) + voice[i] * _mix;
+    }
+
+    public override void Reset() => _shifter.Reset();
 }
 
 /// <summary>

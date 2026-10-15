@@ -32,16 +32,18 @@ public sealed class RelayCommand(Action<object?> execute) : ICommand
 
 public sealed class PresetItem(Preset preset) : Observable
 {
-    private bool _isSelected;
+    private bool _isSelected, _isFavorite;
 
     public Preset Preset { get; } = preset;
     public string Name => Preset.Name;
     public string Tagline => Preset.BuiltIn ? Preset.Tagline : "Mon preset";
-    public string Icon => Preset.Icon;
+    public string Icon => string.IsNullOrEmpty(Preset.Icon) ? "" : Preset.Icon;
+    public string Category => Preset.BuiltIn ? Preset.Category : PresetCategories.Mine;
     public bool IsUser => !Preset.BuiltIn;
     public Brush ToneBrush => Tones.Brush(Preset.Tone);
 
     public bool IsSelected { get => _isSelected; set => Set(ref _isSelected, value); }
+    public bool IsFavorite { get => _isFavorite; set => Set(ref _isFavorite, value); }
 }
 
 public sealed class SoundItem(string name, string path, int index) : Observable
@@ -63,18 +65,22 @@ public sealed class SoundItem(string name, string path, int index) : Observable
 
 public static class Tones
 {
-    private static readonly string[] Order = ["blaze", "surge", "neon", "volt", "boost"];
+    private static readonly string[] Order = ["iris", "mint", "sky", "amber", "rose", "coral", "volt"];
 
+    /// <summary>
+    /// Teintes des presets (noms historiques gardés pour les presets déjà partagés) vers la palette Centrale :
+    /// les couleurs secondaires servent aux données, le Volt à la sélection.
+    /// </summary>
     public static Brush Brush(string tone) => tone switch
     {
         "volt" => Res("VoltBrush"),
-        "blaze" => Res("BlazeBrush"),
-        "surge" => Res("SurgeBrush"),
-        "boost" => Res("BoostBrush"),
-        "neon" => Res("NeonBrush"),
-        "hazard" => Res("HazardBrush"),
-        "violet" => Res("Violet200Brush"),
-        _ => Res("PaperBrush"),
+        "blaze" or "amber" => Res("AmberBrush"),
+        "surge" or "sky" => Res("SkyBrush"),
+        "boost" or "mint" => Res("MintBrush"),
+        "neon" or "rose" => Res("RoseBrush"),
+        "hazard" or "coral" => Res("CoralBrush"),
+        "violet" or "iris" => Res("IrisBrush"),
+        _ => Res("Ink200Brush"),
     };
 
     public static Brush Cycle(int i) => Brush(Order[((i % Order.Length) + Order.Length) % Order.Length]);

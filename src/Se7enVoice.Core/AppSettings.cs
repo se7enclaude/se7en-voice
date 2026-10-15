@@ -25,6 +25,28 @@ public sealed class AppSettings
     public List<SoundEntry> Sounds { get; set; } = [];
     public bool CableRenameOffered { get; set; }
 
+    // Studio
+    public List<string> Favorites { get; set; } = [];
+    public bool PushToTalkOn { get; set; }
+    public int PushToTalkKey { get; set; } = 0x56; // V
+    public string? RecordingsFolder { get; set; }
+
+    // Table de mixage
+    /// <summary>Volume (0..1) des tranches que l'utilisateur a réglées. Une tranche absente n'est jamais touchée.</summary>
+    public Dictionary<string, double> CategoryVolumes { get; set; } = [];
+    public Dictionary<string, bool> CategoryMutes { get; set; } = [];
+    /// <summary>Volume propre de chaque appli (0..1), multiplié par celui de sa tranche.</summary>
+    public Dictionary<string, double> AppVolumes { get; set; } = [];
+    public Dictionary<string, bool> AppMutes { get; set; } = [];
+    /// <summary>Tranche choisie à la main pour une appli (nom du programme → tranche).</summary>
+    public Dictionary<string, string> AppCategoryOverrides { get; set; } = [];
+    /// <summary>Applis dont le son est envoyé dans le micro virtuel (noms de programme).</summary>
+    public List<string> AppsToMic { get; set; } = [];
+    public double AppsToMicDb { get; set; } = -6;
+    public bool DuckOnMyVoice { get; set; }
+    public bool DuckOnFriends { get; set; }
+    public double DuckAmount { get; set; } = 0.6;
+
     public static string Folder { get; } =
         System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Se7enVoice");
 
