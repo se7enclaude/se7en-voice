@@ -6,15 +6,21 @@ using NAudio.CoreAudioApi;
 namespace Se7enVoice.Audio;
 
 /// <summary>
-/// Renomme les deux entrées de VB-CABLE dans Windows (« se7en Voice – Micro »…) pour qu'elles
-/// soient claires dans Discord et les jeux. Windows exige les droits administrateur pour ça :
+/// Renomme les deux entrées de VB-CABLE dans Windows en « Seven Microphone » pour qu'elles
+/// soient claires dans Discord et les jeux (qui affichent « Seven Microphone (se7en Voice) »). Windows exige les droits administrateur pour ça :
 /// l'app se relance une fois en mode admin avec l'argument <see cref="Argument"/>.
 /// </summary>
 public static class CableRenamer
 {
     public const string Argument = "--rename-cable";
-    public const string MicName = "se7en Voice - Micro";
-    public const string SpeakerName = "se7en Voice - Sortie (ne pas utiliser)";
+    public const string MicName = "Seven Microphone";
+    public const string SpeakerName = "Seven Microphone - interne (ne pas utiliser)";
+    /// <summary>Nom de l'« appareil » affiché entre parenthèses après l'entrée.</summary>
+    public const string AdapterName = "se7en Voice";
+
+    /// <summary>L'entrée porte déjà un nom donné par se7en Voice (actuel ou d'avant la 1.2).</summary>
+    public static bool IsRenamed(string name) =>
+        name.StartsWith(MicName, StringComparison.OrdinalIgnoreCase) || name.StartsWith("se7en", StringComparison.OrdinalIgnoreCase);
 
     /// <summary>Relance l'app en admin pour renommer. Retourne false si l'utilisateur refuse.</summary>
     public static bool RequestElevatedRename()
@@ -46,7 +52,8 @@ public static class CableRenamer
                 foreach (var d in enumerator.EnumerateAudioEndPoints(flow, DeviceState.Active))
                     if (DeviceService.IsCable(d))
                     {
-                        SetDescription(d.ID, flow == DataFlow.Capture ? MicName : SpeakerName);
+                        SetName(d.ID, DeviceDesc, flow == DataFlow.Capture ? MicName : SpeakerName);
+                        try { SetName(d.ID, InterfaceName, AdapterName); } catch (Exception) { /* nom d'appareil facultatif */ }
                         renamed++;
                     }
             return renamed > 0 ? 0 : 2;
@@ -60,13 +67,13 @@ public static class CableRenamer
     // --- Interop COM minimal : IMMDevice::OpenPropertyStore en écriture ---
 
     private static readonly PropKey DeviceDesc = new(new Guid("a45c254e-df1c-4efd-8020-67d146a850e0"), 2);
+    private static readonly PropKey InterfaceName = new(new Guid("026e516e-b814-414b-83cd-856d6fef4822"), 2);
 
-    private static void SetDescription(string deviceId, string name)
+    private static void SetName(string deviceId, PropKey key, string name)
     {
         var enumerator = (IMMDeviceEnumerator)new MMDeviceEnumeratorCom();
         Marshal.ThrowExceptionForHR(enumerator.GetDevice(deviceId, out var device));
         Marshal.ThrowExceptionForHR(device.OpenPropertyStore(2 /* STGM_READWRITE */, out var store));
-        var key = DeviceDesc;
         var value = new PropVariant { vt = 31 /* VT_LPWSTR */, pointer = Marshal.StringToCoTaskMemUni(name) };
         try
         {

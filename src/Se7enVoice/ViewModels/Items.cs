@@ -65,25 +65,23 @@ public sealed class SoundItem(string name, string path, int index) : Observable
 
 public static class Tones
 {
-    private static readonly string[] Order = ["iris", "mint", "sky", "amber", "rose", "coral", "volt"];
+    private static readonly string[] Order = ["violet", "mint", "peach", "sky", "rose"];
 
     /// <summary>
-    /// Teintes des presets (noms historiques gardés pour les presets déjà partagés) vers la palette Centrale :
-    /// les couleurs secondaires servent aux données, le Volt à la sélection.
+    /// Teintes des presets (noms historiques gardés pour les presets déjà partagés) vers les dégradés
+    /// « puits d'icône » du design Centrale Audio : violet, menthe, rose, pêche, ciel, neutre.
     /// </summary>
     public static Brush Brush(string tone) => tone switch
     {
-        "volt" => Res("VoltBrush"),
-        "blaze" or "amber" => Res("AmberBrush"),
-        "surge" or "sky" => Res("SkyBrush"),
-        "boost" or "mint" => Res("MintBrush"),
-        "neon" or "rose" => Res("RoseBrush"),
-        "hazard" or "coral" => Res("CoralBrush"),
-        "violet" or "iris" => Res("IrisBrush"),
-        _ => Res("Ink200Brush"),
+        "volt" or "violet" or "iris" => Res("ToneViolet"),
+        "blaze" or "amber" or "peach" => Res("TonePeach"),
+        "surge" or "sky" => Res("ToneSky"),
+        "boost" or "mint" => Res("ToneMint"),
+        "neon" or "rose" or "hazard" or "coral" => Res("ToneRose"),
+        _ => Res("ToneNeutral"),
     };
 
     public static Brush Cycle(int i) => Brush(Order[((i % Order.Length) + Order.Length) % Order.Length]);
 
-    private static Brush Res(string key) => Application.Current?.TryFindResource(key) as Brush ?? Brushes.White;
+    private static Brush Res(string key) => Application.Current?.TryFindResource(key) as Brush ?? Brushes.Gray;
 }

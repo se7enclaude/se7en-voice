@@ -1,0 +1,73 @@
+<!-- Palette sombre du design « Centrale Audio » : noir violacé avec lueurs violette, menthe et rose. -->
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+    <LinearGradientBrush x:Key="BackdropBrush" StartPoint="0.2,0" EndPoint="0.8,1">
+        <GradientStop Color="#1B1A21" Offset="0" />
+        <GradientStop Color="#0F0E12" Offset="1" />
+    </LinearGradientBrush>
+    <RadialGradientBrush x:Key="Leak1Brush" Center="0.85,0.1" GradientOrigin="0.85,0.1" RadiusX="0.5" RadiusY="0.45">
+        <GradientStop Color="#617A64F0" Offset="0" /><GradientStop Color="#007A64F0" Offset="1" />
+    </RadialGradientBrush>
+    <RadialGradientBrush x:Key="Leak2Brush" Center="0.1,0.9" GradientOrigin="0.1,0.9" RadiusX="0.4" RadiusY="0.36">
+        <GradientStop Color="#384FCDB8" Offset="0" /><GradientStop Color="#004FCDB8" Offset="1" />
+    </RadialGradientBrush>
+    <RadialGradientBrush x:Key="Leak3Brush" Center="0.65,0.95" GradientOrigin="0.65,0.95" RadiusX="0.32" RadiusY="0.3">
+        <GradientStop Color="#33EE8FB7" Offset="0" /><GradientStop Color="#00EE8FB7" Offset="1" />
+    </RadialGradientBrush>
+    <RadialGradientBrush x:Key="Leak4Brush" Center="0.5,0.5" GradientOrigin="0.5,0.5" RadiusX="0.1" RadiusY="0.1">
+        <GradientStop Color="#00000000" Offset="0" /><GradientStop Color="#00000000" Offset="1" />
+    </RadialGradientBrush>
+
+    <SolidColorBrush x:Key="TextPrimaryBrush" Color="#F4F2F0" />
+    <SolidColorBrush x:Key="TextSecondaryBrush" Color="#A3F4F2F0" />
+    <SolidColorBrush x:Key="TextTertiaryBrush" Color="#66F4F2F0" />
+    <SolidColorBrush x:Key="TextOnAccentBrush" Color="#FFFFFF" />
+    <SolidColorBrush x:Key="TextOnSolidBrush" Color="#141416" />
+
+    <SolidColorBrush x:Key="AccentBrush" Color="#7A64F0" />
+    <SolidColorBrush x:Key="AccentTextBrush" Color="#B7A9FF" />
+    <SolidColorBrush x:Key="AccentSoftBrush" Color="#389683FA" />
+    <SolidColorBrush x:Key="Accent2Brush" Color="#4FCDB8" />
+    <SolidColorBrush x:Key="Accent2TextBrush" Color="#A6EDE1" />
+    <SolidColorBrush x:Key="Accent2SoftBrush" Color="#334FCDB8" />
+    <SolidColorBrush x:Key="SuccessBrush" Color="#34C759" />
+    <SolidColorBrush x:Key="SuccessTextBrush" Color="#6BE08C" />
+    <SolidColorBrush x:Key="SuccessSoftBrush" Color="#2934C759" />
+    <SolidColorBrush x:Key="WarningBrush" Color="#FFB020" />
+    <SolidColorBrush x:Key="DangerBrush" Color="#FF453A" />
+    <SolidColorBrush x:Key="DangerTextBrush" Color="#FF8A82" />
+    <SolidColorBrush x:Key="DangerSoftBrush" Color="#2EFF453A" />
+
+    <SolidColorBrush x:Key="GlassFillBrush" Color="#6B2E2C36" />
+    <SolidColorBrush x:Key="GlassFillStrongBrush" Color="#1FFFFFFF" />
+    <SolidColorBrush x:Key="GlassTileBrush" Color="#0FFFFFFF" />
+    <SolidColorBrush x:Key="GlassStrokeBrush" Color="#29FFFFFF" />
+    <SolidColorBrush x:Key="GlassStrokeInnerBrush" Color="#17FFFFFF" />
+    <SolidColorBrush x:Key="HighlightBrush" Color="#24FFFFFF" />
+    <SolidColorBrush x:Key="SurfaceSolidBrush" Color="#F0FFFFFF" />
+    <SolidColorBrush x:Key="MenuBrush" Color="#F228262E" />
+    <SolidColorBrush x:Key="TooltipBrush" Color="#F0FAF8F6" />
+    <SolidColorBrush x:Key="TooltipTextBrush" Color="#141416" />
+    <SolidColorBrush x:Key="WellBrush" Color="#14FFFFFF" />
+    <SolidColorBrush x:Key="WellStrongBrush" Color="#24FFFFFF" />
+    <SolidColorBrush x:Key="DividerBrush" Color="#14FFFFFF" />
+    <SolidColorBrush x:Key="ScrimBrush" Color="#7306060A" />
+    <SolidColorBrush x:Key="MeterOffBrush" Color="#17FFFFFF" />
+
+    <LinearGradientBrush x:Key="IridescentBrush" StartPoint="0,0" EndPoint="1,1">
+        <GradientStop Color="#F8C9A8" Offset="0" />
+        <GradientStop Color="#F7B8D2" Offset="0.28" />
+        <GradientStop Color="#C9B8F5" Offset="0.58" />
+        <GradientStop Color="#9EE4F2" Offset="1" />
+    </LinearGradientBrush>
+
+    <DropShadowEffect x:Key="PanelShadow" Color="Black" BlurRadius="60" ShadowDepth="26" Direction="270" Opacity="0.55" />
+    <DropShadowEffect x:Key="TileShadow" Color="Black" BlurRadius="22" ShadowDepth="8" Direction="270" Opacity="0.4" />
+    <DropShadowEffect x:Key="PillShadow" Color="Black" BlurRadius="20" ShadowDepth="8" Direction="270" Opacity="0.5" />
+    <DropShadowEffect x:Key="AccentGlow" Color="#7A64F0" BlurRadius="24" ShadowDepth="10" Direction="270" Opacity="0.55" />
+    <DropShadowEffect x:Key="MintGlow" Color="#2FB09C" BlurRadius="24" ShadowDepth="10" Direction="270" Opacity="0.5" />
+    <DropShadowEffect x:Key="DangerGlow" Color="#FF453A" BlurRadius="22" ShadowDepth="8" Direction="270" Opacity="0.5" />
+    <DropShadowEffect x:Key="IridGlow" Color="#966EDC" BlurRadius="40" ShadowDepth="14" Direction="270" Opacity="0.45" />
+    <DropShadowEffect x:Key="PopShadow" Color="Black" BlurRadius="60" ShadowDepth="18" Direction="270" Opacity="0.6" />
+</ResourceDictionary>

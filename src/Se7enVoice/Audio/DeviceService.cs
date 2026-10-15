@@ -28,7 +28,10 @@ public sealed class DeviceService : IMMNotificationClient, IDisposable
         string name = SafeGet(() => d.FriendlyName);
         return adapter.Contains("VB-Audio", StringComparison.OrdinalIgnoreCase)
             || name.Contains("VB-Audio", StringComparison.OrdinalIgnoreCase)
-            || name.StartsWith("CABLE ", StringComparison.OrdinalIgnoreCase);
+            || name.StartsWith("CABLE ", StringComparison.OrdinalIgnoreCase)
+            // Une fois renommé par se7en Voice : « Seven Microphone (se7en Voice) »
+            || adapter.Equals(CableRenamer.AdapterName, StringComparison.OrdinalIgnoreCase)
+            || name.StartsWith(CableRenamer.MicName, StringComparison.OrdinalIgnoreCase);
     }
 
     public List<AudioDevice> Microphones() => List(DataFlow.Capture).Where(d => !d.IsCable).ToList();

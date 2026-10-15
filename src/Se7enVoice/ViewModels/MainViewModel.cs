@@ -75,6 +75,36 @@ public sealed class MainViewModel : Observable, IDisposable
 
     public MixerViewModel Mixer { get; }
 
+    // ---------- Apparence ----------
+
+    public bool IsDark
+    {
+        get => _settings.Theme == "dark";
+        set
+        {
+            if (value == IsDark) return;
+            _settings.Theme = value ? "dark" : "light";
+            MarkDirty();
+            ThemeManager.Apply(value);
+            Raise(); Raise(nameof(IsLight));
+        }
+    }
+
+    public bool IsLight { get => !IsDark; set => IsDark = !value; }
+
+    /// <summary>Voix de la barre du bas : les favoris, sinon une sélection de départ.</summary>
+    public ObservableCollection<PresetItem> QuickVoices { get; } = [];
+
+    private void RefreshQuickVoices()
+    {
+        var favs = AllPresets.Where(p => p.IsFavorite).Take(6).ToList();
+        if (favs.Count == 0)
+            favs = new[] { "Normal", "Streamer", "Voix grave", "Robot", "Démon" }
+                .Select(n => AllPresets.FirstOrDefault(p => p.Name == n)).OfType<PresetItem>().ToList();
+        QuickVoices.Clear();
+        foreach (var p in favs) QuickVoices.Add(p);
+    }
+
     private static Dispatcher Dispatcher => System.Windows.Application.Current.Dispatcher;
 
     public AudioEngine Engine { get; } = new();
@@ -124,7 +154,7 @@ public sealed class MainViewModel : Observable, IDisposable
 
     public bool CableFound { get => _cableFound; private set => Set(ref _cableFound, value); }
     public string CableName { get => _cableName; private set => Set(ref _cableName, value); }
-    public bool CableRenamed => CableName.StartsWith("se7en", StringComparison.OrdinalIgnoreCase);
+    public bool CableRenamed => CableRenamer.IsRenamed(CableName);
 
     public string Status { get => _status; private set => Set(ref _status, value); }
     public bool Live { get => _live; private set => Set(ref _live, value); }
@@ -178,7 +208,7 @@ public sealed class MainViewModel : Observable, IDisposable
         string? mic = _selectedMicrophone?.Id;
         RefreshDevices(restart: false);
         if (hadCable != CableFound || mic != _selectedMicrophone?.Id || !Engine.IsRunning) RestartAudio();
-        if (!hadCable && CableFound) Notify?.Invoke("Micro virtuel détecté · choisissez « " + CableName + " » comme micro dans Discord");
+        if (!hadCable && CableFound) Notify?.Invoke("Micro virtuel détecté · choisis « " + CableName + " » comme micro dans Discord");
     }
 
     public void RestartAudio()
@@ -288,6 +318,7 @@ public sealed class MainViewModel : Observable, IDisposable
         foreach (var p in items) VisiblePresets.Add(p);
         Raise(nameof(NoPresetMatch));
         Raise(nameof(PresetCount));
+        RefreshQuickVoices();
         Raise(nameof(LibraryTitle));
     }
 
@@ -305,7 +336,7 @@ public sealed class MainViewModel : Observable, IDisposable
     {
         var favs = AllPresets.Where(p => p.IsFavorite).ToList();
         if (index >= 0 && index < favs.Count) ApplyPreset(favs[index]);
-        else Notify?.Invoke("Pas de favori n°" + (index + 1) + " · cliquez sur l'étoile d'une voix pour l'ajouter");
+        else Notify?.Invoke("Pas de favori n°" + (index + 1) + " · clique sur l'étoile d'une voix pour l'ajouter");
     }
     public bool Modified { get => _modified; private set => Set(ref _modified, value); }
 
@@ -363,7 +394,7 @@ public sealed class MainViewModel : Observable, IDisposable
         item.IsFavorite = _settings.Favorites.Contains(name);
         RefreshPresetView();
         ApplyPreset(item);
-        Notify?.Invoke($"Voix enregistrée · « {name} » ajoutée à vos presets");
+        Notify?.Invoke($"Voix enregistrée · « {name} » ajoutée à tes presets");
     }
 
     public void DeletePreset(PresetItem item)
@@ -557,7 +588,7 @@ public sealed class MainViewModel : Observable, IDisposable
             if (!Set(ref _bypass, value)) return;
             Raise(nameof(EffectsOn));
             Engine.Bypass = value;
-            Notify?.Invoke(value ? "Effets coupés · vous entendez votre vraie voix (A/B)" : "Effets rallumés");
+            Notify?.Invoke(value ? "Effets coupés · tu entends ta vraie voix (A/B)" : "Effets rallumés");
         }
     }
 
@@ -639,7 +670,7 @@ public sealed class MainViewModel : Observable, IDisposable
                 MarkDirty();
                 CapturingKey = false;
                 UpdateKeyTimer();
-                Notify?.Invoke("Push-to-talk activé · maintenez « " + KeyWatcher.NameOf(vk) + " » pour parler.");
+                Notify?.Invoke("Push-to-talk activé · maintiens « " + KeyWatcher.NameOf(vk) + " » pour parler.");
             }
             else if (_keyCaptureTicks > 600) { CapturingKey = false; UpdateKeyTimer(); }
             return;
@@ -738,10 +769,97 @@ public sealed class MainViewModel : Observable, IDisposable
         set { _settings.MinimizeToTray = value; MarkDirty(); Raise(); }
     }
 
+    public bool CableSetupOffered
+    {
+        get => _settings.CableSetupOffered;
+        set { _settings.CableSetupOffered = value; MarkDirty(); }
+    }
+
     public bool CableRenameOffered
     {
         get => _settings.CableRenameOffered;
         set { _settings.CableRenameOffered = value; MarkDirty(); }
+    }
+
+    // ---------- Installation de « Seven Microphone » ----------
+
+    private bool _installingCable;
+    private string _cableInstallStatus = "";
+
+    public bool InstallingCable { get => _installingCable; private set => Set(ref _installingCable, value); }
+    public string CableInstallStatus { get => _cableInstallStatus; private set => Set(ref _cableInstallStatus, value); }
+
+    /// <summary>Le micro virtuel attend un redémarrage du PC (installé mais pas encore visible).</summary>
+    public bool CableRebootPending
+    {
+        get => _settings.CableRebootPending;
+        private set { _settings.CableRebootPending = value; MarkDirty(); Raise(); }
+    }
+
+    /// <summary>
+    /// Télécharge VB-CABLE sur le site officiel, lance son installateur (une demande Windows, puis
+    /// « Install Driver ») et renomme le résultat en « Seven Microphone ».
+    /// </summary>
+    public async Task InstallCableAsync()
+    {
+        if (InstallingCable) return;
+        InstallingCable = true;
+        try
+        {
+            CableInstallStatus = "Téléchargement…";
+            var progress = new Progress<double>(f => CableInstallStatus = $"Téléchargement… {f:P0}");
+            string setup;
+            try { setup = await CableInstaller.DownloadAsync(progress); }
+            catch (Exception ex)
+            {
+                CableInstallStatus = "";
+                Notify?.Invoke("Téléchargement impossible · " + ex.Message);
+                return;
+            }
+
+            CableInstallStatus = "Clique « Oui », puis « Install Driver » dans la fenêtre VB-Audio";
+            var code = await CableInstaller.RequestElevatedInstallAsync(setup);
+            RefreshDevices(restart: true);
+            switch (code)
+            {
+                case null:
+                    CableInstallStatus = "";
+                    Notify?.Invoke("Installation annulée · Seven Microphone n'est pas installé");
+                    break;
+                case CableInstaller.Done:
+                    CableInstallStatus = "";
+                    CableRebootPending = false;
+                    Notify?.Invoke("Seven Microphone installé · choisis-le comme micro dans Discord et tes jeux");
+                    break;
+                case CableInstaller.RebootNeeded when CableFound:
+                    // Pilote visible mais renommage refusé/échoué : on le proposera à nouveau.
+                    CableInstallStatus = "";
+                    Notify?.Invoke("Micro virtuel installé · renomme-le en « Seven Microphone » dans Réglages");
+                    break;
+                case CableInstaller.RebootNeeded:
+                    CableRebootPending = true;
+                    CableInstallStatus = "Redémarre le PC pour terminer l'installation";
+                    Notify?.Invoke("Presque fini · redémarre le PC, Seven Microphone sera prêt au prochain lancement");
+                    break;
+                default:
+                    CableInstallStatus = "";
+                    Notify?.Invoke("L'installation n'a pas abouti · réessaie, ou installe VB-CABLE depuis vb-audio.com");
+                    break;
+            }
+        }
+        finally
+        {
+            InstallingCable = false;
+        }
+    }
+
+    /// <summary>Au démarrage : le pilote est apparu après le redémarrage, on finit en le renommant.</summary>
+    public void FinishPendingCableSetup()
+    {
+        if (!CableRebootPending || !CableFound) return;
+        CableRebootPending = false;
+        CableInstallStatus = "";
+        if (!CableRenamed) RenameCable();
     }
 
     public void RenameCable()
@@ -749,11 +867,11 @@ public sealed class MainViewModel : Observable, IDisposable
         if (CableRenamer.RequestElevatedRename())
         {
             RefreshDevices(restart: false);
-            Notify?.Invoke("Micro renommé · dans Discord, choisissez « " + CableRenamer.MicName + " »");
+            Notify?.Invoke("Micro renommé · dans Discord, choisis « " + CableRenamer.MicName + " »");
         }
         else
         {
-            Notify?.Invoke("Renommage annulé · vous pouvez quand même choisir « CABLE Output » dans Discord");
+            Notify?.Invoke("Renommage annulé · tu peux quand même choisir « CABLE Output » dans Discord");
         }
     }
 

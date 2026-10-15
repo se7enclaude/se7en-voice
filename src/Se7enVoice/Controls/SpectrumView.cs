@@ -13,11 +13,10 @@ public sealed class SpectrumView : FrameworkElement
     private const int Size = 2048, Bars = 36;
     private const double MinHz = 60, MaxHz = 14000, FloorDb = -78, TopDb = -12;
 
-    private static readonly Brush TrackBrush = Freeze(new SolidColorBrush(Color.FromArgb(0x10, 0xFF, 0xFF, 0xFF)));
-    private static readonly Brush CapBrush = Freeze(new SolidColorBrush(Color.FromRgb(0xF5, 0xF6, 0xF8)));
+    // Dégradé violet → menthe des accents du design, crête en blanc
     private static readonly Brush BarBrush = Freeze(new LinearGradientBrush(
-        [new GradientStop(Color.FromRgb(0x4F, 0xD1, 0xB0), 0), new GradientStop(Color.FromRgb(0xDD, 0xF2, 0x47), 0.62),
-         new GradientStop(Color.FromRgb(0xED, 0xB8, 0x42), 0.82), new GradientStop(Color.FromRgb(0xF2, 0x60, 0x5A), 1)],
+        [new GradientStop(Color.FromRgb(0x7A, 0x64, 0xF0), 0), new GradientStop(Color.FromRgb(0x96, 0x83, 0xFA), 0.45),
+         new GradientStop(Color.FromRgb(0x4F, 0xCD, 0xB8), 1)],
         new Point(0, 1), new Point(0, 0)) { MappingMode = BrushMappingMode.RelativeToBoundingBox });
 
     private readonly Fft _fft = new(Size);
@@ -69,12 +68,14 @@ public sealed class SpectrumView : FrameworkElement
         double w = ActualWidth, h = ActualHeight;
         if (w <= 0 || h <= 0) return;
         double slot = w / Bars, bar = slot * 0.58, r = bar / 2;
+        var track = TryFindResource("MeterOffBrush") as Brush ?? Brushes.Transparent;
+        var cap = TryFindResource("TextPrimaryBrush") as Brush ?? Brushes.White;
         // Le dégradé couvre toute la hauteur : on découpe chaque barre dedans.
         dc.PushClip(new RectangleGeometry(new Rect(0, 0, w, h)));
         for (int b = 0; b < Bars; b++)
         {
             double x = b * slot + (slot - bar) / 2;
-            dc.DrawRoundedRectangle(TrackBrush, null, new Rect(x, 0, bar, h), r, r);
+            dc.DrawRoundedRectangle(track, null, new Rect(x, 0, bar, h), r, r);
             double lh = _levels[b] * h;
             if (lh > 1)
             {
@@ -83,7 +84,7 @@ public sealed class SpectrumView : FrameworkElement
                 dc.Pop();
             }
             double py = h - _peaks[b] * h;
-            if (_peaks[b] > 0.02) dc.DrawRoundedRectangle(CapBrush, null, new Rect(x, Math.Max(0, py - 3), bar, 2.5), 1, 1);
+            if (_peaks[b] > 0.02) dc.DrawRoundedRectangle(cap, null, new Rect(x, Math.Max(0, py - 3), bar, 2.5), 1, 1);
         }
         dc.Pop();
     }

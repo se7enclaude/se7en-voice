@@ -28,6 +28,7 @@ public partial class MainWindow : Window
         InitializeComponent();
         _vm = new MainViewModel();
         DataContext = _vm;
+        if (_vm.IsDark) ThemeManager.Apply(true);
 
         _vm.PresetApplied += ShowPresetToast;
         _vm.Notify += ShowToast;
@@ -70,6 +71,7 @@ public partial class MainWindow : Window
         _tray.MouseClick += (_, e) => { if (e.Button == Forms.MouseButtons.Left) ShowFromTray(); };
 
         SourceInitialized += (_, _) => RegisterHotkeys();
+        Loaded += (_, _) => OfferCableSetup();
         Closing += OnClosing;
 
         if (startMinimized)
@@ -136,7 +138,7 @@ public partial class MainWindow : Window
             {
                 _trayHintShown = true;
                 _tray.ShowBalloonTip(4000, "se7en Voice tourne toujours",
-                    "Votre voix reste active. Clic droit sur l'icône près de l'horloge pour quitter.", Forms.ToolTipIcon.Info);
+                    "Ta voix reste active. Clic droit sur l'icône près de l'horloge pour quitter.", Forms.ToolTipIcon.Info);
             }
             return;
         }
@@ -197,6 +199,15 @@ public partial class MainWindow : Window
         if ((sender as FrameworkElement)?.Tag is PresetItem item) _vm.ApplyPreset(item);
     }
 
+    private void QuickVoice_Click(object sender, RoutedEventArgs e)
+    {
+        if ((sender as FrameworkElement)?.Tag is PresetItem item) _vm.ApplyPreset(item);
+    }
+
+    private void GoVoice_Click(object sender, RoutedEventArgs e) => TabVoice.IsChecked = true;
+
+    private void SearchBox_GotFocus(object sender, KeyboardFocusChangedEventArgs e) => TabVoice.IsChecked = true;
+
     private void Favorite_Click(object sender, RoutedEventArgs e)
     {
         if ((sender as FrameworkElement)?.Tag is PresetItem item) _vm.ToggleFavorite(item);
@@ -247,7 +258,7 @@ public partial class MainWindow : Window
         if (name.Length == 0) { PresetNameBox.Focus(); return; }
         if (_vm.Presets.Any(p => string.Equals(p.Name, name, StringComparison.CurrentCultureIgnoreCase)))
         {
-            ShowToast("Ce nom est déjà pris par une voix de base · choisissez-en un autre");
+            ShowToast("Ce nom est déjà pris par une voix de base · choisis-en un autre");
             return;
         }
         SaveDialog.Visibility = Visibility.Collapsed;
@@ -335,6 +346,25 @@ public partial class MainWindow : Window
 
     // ---------- Micro virtuel ----------
 
+    private async void InstallCable_Click(object sender, RoutedEventArgs e)
+    {
+        CableDialog.Visibility = Visibility.Collapsed;
+        await _vm.InstallCableAsync();
+    }
+
+    private void CableDialogInstall_Click(object sender, RoutedEventArgs e) => InstallCable_Click(sender, e);
+
+    private void CableDialogLater_Click(object sender, RoutedEventArgs e) => CableDialog.Visibility = Visibility.Collapsed;
+
+    /// <summary>Premier lancement sans micro virtuel : on propose l'installation une fois.</summary>
+    private void OfferCableSetup()
+    {
+        _vm.FinishPendingCableSetup();
+        if (_vm.CableFound || _vm.CableRebootPending || _vm.CableSetupOffered) return;
+        _vm.CableSetupOffered = true;
+        CableDialog.Visibility = Visibility.Visible;
+    }
+
     private void DownloadCable_Click(object sender, RoutedEventArgs e) =>
         Process.Start(new ProcessStartInfo("https://vb-audio.com/Cable/") { UseShellExecute = true });
 
@@ -342,8 +372,8 @@ public partial class MainWindow : Window
     {
         _vm.RefreshDevices(restart: true);
         ShowToast(_vm.CableFound
-            ? "Micro virtuel trouvé · choisissez « " + _vm.CableName + " » dans Discord"
-            : "Micro virtuel toujours absent · redémarrez le PC après l'installation");
+            ? "Micro virtuel trouvé · choisis « " + _vm.CableName + " » dans Discord"
+            : "Micro virtuel toujours absent · redémarre le PC après l'installation");
     }
 
     private void RenameCable_Click(object sender, RoutedEventArgs e)
@@ -354,19 +384,23 @@ public partial class MainWindow : Window
 
     // ---------- Effets visuels ----------
 
+    /// <summary>Notification « titre · détail » : le titre en gras, le détail en dessous.</summary>
     private void ShowToast(string message)
     {
-        ToastText.Text = message;
+        int cut = message.IndexOf(" · ", StringComparison.Ordinal);
+        ToastTitle.Text = cut > 0 ? message[..cut] : message;
+        ToastText.Text = cut > 0 ? message[(cut + 3)..] : "";
+        ToastText.Visibility = cut > 0 ? Visibility.Visible : Visibility.Collapsed;
         var anim = new DoubleAnimationUsingKeyFrames();
-        anim.KeyFrames.Add(new EasingDoubleKeyFrame(1, KeyTime.FromTimeSpan(TimeSpan.FromMilliseconds(180)), new CubicEase { EasingMode = EasingMode.EaseOut }));
-        anim.KeyFrames.Add(new LinearDoubleKeyFrame(1, KeyTime.FromTimeSpan(TimeSpan.FromMilliseconds(4200))));
-        anim.KeyFrames.Add(new EasingDoubleKeyFrame(0, KeyTime.FromTimeSpan(TimeSpan.FromMilliseconds(4500)), new CubicEase { EasingMode = EasingMode.EaseIn }));
+        anim.KeyFrames.Add(new EasingDoubleKeyFrame(1, KeyTime.FromTimeSpan(TimeSpan.FromMilliseconds(200)), new CubicEase { EasingMode = EasingMode.EaseOut }));
+        anim.KeyFrames.Add(new LinearDoubleKeyFrame(1, KeyTime.FromTimeSpan(TimeSpan.FromMilliseconds(3400))));
+        anim.KeyFrames.Add(new EasingDoubleKeyFrame(0, KeyTime.FromTimeSpan(TimeSpan.FromMilliseconds(3700)), new CubicEase { EasingMode = EasingMode.EaseIn }));
         Toast.BeginAnimation(OpacityProperty, anim);
         if (!IsVisible) _tray.ShowBalloonTip(3000, "se7en Voice", message, Forms.ToolTipIcon.None);
     }
 
     private void ShowPresetToast(PresetItem p)
     {
-        if (IsVisible) ShowToast($"Voix appliquée · « {p.Name} » est active sur votre micro");
+        if (IsVisible) ShowToast($"Voix appliquée · « {p.Name} » est active sur ton micro");
     }
 }

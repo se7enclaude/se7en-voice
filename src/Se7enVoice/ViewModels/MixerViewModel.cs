@@ -295,15 +295,15 @@ public sealed class MixerChannel(MixerViewModel owner, string category) : Observ
 
     public string Category { get; } = category;
     public string Icon => AppCategories.IconOf(Category);
-    /// <summary>Couleur fixe de la source (design Centrale : jeu iris, musique menthe, chat ciel, navigateur rose, système ambre).</summary>
+    /// <summary>Couleur fixe de la source (design Centrale Audio : jeu pêche, musique menthe, Discord ciel, navigateur rose).</summary>
     public Brush ToneBrush => Tones.Brush(Category switch
     {
-        AppCategories.Games => "iris",
+        AppCategories.Games => "peach",
         AppCategories.Music => "mint",
         AppCategories.Chat => "sky",
         AppCategories.Browser => "rose",
-        AppCategories.System => "amber",
-        _ => "paper",
+        AppCategories.System => "paper",
+        _ => "violet",
     });
     public ObservableCollection<MixerApp> Apps { get; } = [];
     public string Summary => Apps.Count == 0 ? "Aucune appli" : string.Join(" · ", Apps.Select(a => a.Name));

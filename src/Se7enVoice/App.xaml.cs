@@ -18,6 +18,14 @@ public partial class App : Application
             return;
         }
 
+        // Processus admin lancé pour installer « Seven Microphone » (installateur VB-CABLE + renommage).
+        int install = Array.IndexOf(e.Args, CableInstaller.Argument);
+        if (install >= 0 && install + 1 < e.Args.Length)
+        {
+            Shutdown(CableInstaller.RunElevated(e.Args[install + 1]));
+            return;
+        }
+
         // Appelé par Seventh OS avant la désinstallation : on retire le lancement avec Windows.
         if (e.Args.Contains("--uninstall-cleanup"))
         {

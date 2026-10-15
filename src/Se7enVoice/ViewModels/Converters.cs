@@ -11,6 +11,20 @@ public static class Converters
     public static IValueConverter NotEmptyToVisibility { get; } = new Lambda(v => v is string s && s.Length > 0);
     public static IValueConverter CountToVisibility { get; } = new Lambda(v => v is int n && n > 0);
     public static IValueConverter ZeroToVisibility { get; } = new Lambda(v => v is int n && n == 0);
+    public static IValueConverter Not { get; } = new Negate();
+    public static IValueConverter IsNotEmpty { get; } = new NonEmpty();
+
+    private sealed class Negate : IValueConverter
+    {
+        public object Convert(object? value, Type targetType, object? parameter, CultureInfo culture) => value is not true;
+        public object ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture) => value is not true;
+    }
+
+    private sealed class NonEmpty : IValueConverter
+    {
+        public object Convert(object? value, Type targetType, object? parameter, CultureInfo culture) => value is string s && s.Length > 0;
+        public object ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture) => throw new NotSupportedException();
+    }
 
     private sealed class Lambda(Func<object?, bool> visible) : IValueConverter
     {

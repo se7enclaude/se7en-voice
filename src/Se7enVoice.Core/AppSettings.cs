@@ -24,6 +24,13 @@ public sealed class AppSettings
     public bool SoundsToMonitor { get; set; } = true;
     public List<SoundEntry> Sounds { get; set; } = [];
     public bool CableRenameOffered { get; set; }
+    /// <summary>Seven Microphone installé, en attente d'un redémarrage du PC pour apparaître.</summary>
+    public bool CableRebootPending { get; set; }
+    /// <summary>La proposition d'installer Seven Microphone au premier lancement a déjà été montrée.</summary>
+    public bool CableSetupOffered { get; set; }
+
+    /// <summary>Thème de l'interface : « light » (par défaut) ou « dark ».</summary>
+    public string Theme { get; set; } = "light";
 
     // Studio
     public List<string> Favorites { get; set; } = [];
