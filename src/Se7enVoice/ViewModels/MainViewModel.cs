@@ -181,6 +181,7 @@ public sealed class MainViewModel : Observable, IDisposable
         CableFound = Devices.CableInput() != null;
         CableName = cableOut?.Name ?? "";
         Raise(nameof(CableRenamed));
+        AutoRenameCable();
 
         if (restart) RestartAudio();
     }
@@ -819,7 +820,7 @@ public sealed class MainViewModel : Observable, IDisposable
                 case CableInstaller.RebootNeeded when CableFound:
                     // Pilote visible mais renommage refusé/échoué : on le proposera à nouveau.
                     CableInstallStatus = "";
-                    Notify?.Invoke("Micro virtuel installé · renommez-le en « Seven Microphone » dans Paramètres");
+                    Notify?.Invoke("Micro virtuel installé · renommez-le dans Paramètres (bouton « Renommer »)");
                     break;
                 case CableInstaller.RebootNeeded:
                     CableRebootPending = true;
@@ -847,16 +848,30 @@ public sealed class MainViewModel : Observable, IDisposable
         if (!CableRenamed) RenameCable();
     }
 
-    public void RenameCable()
+    private bool _autoRenameDone;
+
+    /// <summary>Dès que le micro virtuel est là sans le bon nom : renommage en silence (pas besoin de droits admin), une fois par lancement.</summary>
+    private void AutoRenameCable()
     {
-        if (CableRenamer.RequestElevatedRename())
+        if (_autoRenameDone || !CableFound || CableRenamed) return;
+        _autoRenameDone = true;
+        if (CableRenamer.Rename() > 0)
         {
             RefreshDevices(restart: false);
-            Notify?.Invoke("Micro renommé · dans Discord, choisissez « " + CableRenamer.MicName + " »");
+            if (CableRenamed) Notify?.Invoke("Seven Microphone prêt · dans Discord, entrée : « " + CableRenamer.MicName + " », sortie : votre casque");
+        }
+    }
+
+    public void RenameCable()
+    {
+        if (CableRenamer.RenameAll())
+        {
+            RefreshDevices(restart: false);
+            Notify?.Invoke("Micro renommé · dans Discord, entrée : « " + CableRenamer.MicName + " », sortie : votre casque");
         }
         else
         {
-            Notify?.Invoke("Renommage annulé · vous pouvez quand même choisir « CABLE Output » dans Discord");
+            Notify?.Invoke("Renommage impossible · " + (CableRenamer.LastError.Length > 0 ? CableRenamer.LastError : "Windows a refusé"));
         }
     }
 

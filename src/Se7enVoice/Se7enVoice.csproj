@@ -1,4 +1,4 @@
-<Project Sdk="Microsoft.NET.Sdk">
+﻿<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
@@ -10,16 +10,16 @@
     <AssemblyName>Se7enVoice</AssemblyName>
     <Product>se7en Voice</Product>
     <Version>1.3.2</Version>
-    <!-- Seventh OS lit la version du .exe : pas de suffixe « +commit ». -->
+    <!-- Seventh OS lit la version du .exe : pas de suffixe Â« +commit Â». -->
     <IncludeSourceRevisionInInformationalVersion>false</IncludeSourceRevisionInInformationalVersion>
     <ApplicationIcon>Assets\app.ico</ApplicationIcon>
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <RuntimeIdentifier>win-x64</RuntimeIdentifier>
-    <!-- Le DPI est géré par le manifeste, comme le recommande WPF (l'avertissement vise WinForms). -->
+    <!-- Le DPI est gÃ©rÃ© par le manifeste, comme le recommande WPF (l'avertissement vise WinForms). -->
     <NoWarn>$(NoWarn);WFO0003</NoWarn>
   </PropertyGroup>
 
-  <!-- WinForms ne sert qu'à l'icône de la zone de notification : on évite les conflits de noms avec WPF. -->
+  <!-- WinForms ne sert qu'Ã  l'icÃ´ne de la zone de notification : on Ã©vite les conflits de noms avec WPF. -->
   <ItemGroup>
     <Using Remove="System.Windows.Forms" />
     <Using Remove="System.Drawing" />

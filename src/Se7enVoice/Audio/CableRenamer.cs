@@ -1,26 +1,71 @@
 using System.ComponentModel;
 using System.Diagnostics;
+using System.IO;
 using System.Runtime.InteropServices;
 using NAudio.CoreAudioApi;
 
 namespace Se7enVoice.Audio;
 
 /// <summary>
-/// Renomme les deux entrées de VB-CABLE dans Windows en « Seven Microphone » pour qu'elles
-/// soient claires dans Discord et les jeux (qui affichent « Seven Microphone (se7en Voice) »). Windows exige les droits administrateur pour ça :
-/// l'app se relance une fois en mode admin avec l'argument <see cref="Argument"/>.
+/// Renomme les entrées de VB-CABLE dans Windows pour qu'on sache quoi choisir dans Discord et les jeux :
+/// le côté enregistrement devient « Seven Microphone - Entrée » (le micro à choisir), le côté lecture
+/// « Seven Microphone - Sortie (réservée à se7en Voice) » (celui où se7en Voice envoie votre voix).
+/// Windows l'accepte sans droits administrateur ; l'app ne se relance en admin (argument <see cref="Argument"/>)
+/// que si l'écriture est refusée.
 /// </summary>
 public static class CableRenamer
 {
     public const string Argument = "--rename-cable";
-    public const string MicName = "Seven Microphone";
-    public const string SpeakerName = "Seven Microphone - interne (ne pas utiliser)";
+    public const string BaseName = "Seven Microphone";
+    public const string MicName = BaseName + " - Entrée";
+    public const string SpeakerName = BaseName + " - Sortie (réservée à se7en Voice)";
+    public const string Speaker16Name = BaseName + " - Sortie 16 canaux (réservée à se7en Voice)";
     /// <summary>Nom de l'« appareil » affiché entre parenthèses après l'entrée.</summary>
     public const string AdapterName = "se7en Voice";
 
-    /// <summary>L'entrée porte déjà un nom donné par se7en Voice (actuel ou d'avant la 1.2).</summary>
-    public static bool IsRenamed(string name) =>
-        name.StartsWith(MicName, StringComparison.OrdinalIgnoreCase) || name.StartsWith("se7en", StringComparison.OrdinalIgnoreCase);
+    /// <summary>Le micro porte le nom actuel (les noms d'avant la 1.3.2 sont refaits).</summary>
+    public static bool IsRenamed(string name) => name.StartsWith(MicName, StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>Dernière erreur de renommage (pour le message à l'utilisateur et le diagnostic).</summary>
+    public static string LastError { get; private set; } = "";
+
+    /// <summary>Renomme tout ce qui n'a pas encore le bon nom. Retourne le nombre d'entrées renommées, -1 si Windows refuse.</summary>
+    public static int Rename()
+    {
+        LastError = "";
+        int renamed = 0;
+        try
+        {
+            using var enumerator = new MMDeviceEnumerator();
+            foreach (var flow in new[] { DataFlow.Capture, DataFlow.Render })
+                foreach (var d in enumerator.EnumerateAudioEndPoints(flow, DeviceState.Active))
+                {
+                    if (!DeviceService.IsCable(d)) continue;
+                    string current = Safe(() => d.FriendlyName);
+                    string target = flow == DataFlow.Capture ? MicName
+                        : current.Contains("16ch", StringComparison.OrdinalIgnoreCase) || current.Contains("16 canaux", StringComparison.OrdinalIgnoreCase) ? Speaker16Name
+                        : SpeakerName;
+                    if (current.StartsWith(target, StringComparison.OrdinalIgnoreCase)) continue;
+                    SetName(d.ID, DeviceDesc, target);
+                    try { SetName(d.ID, InterfaceName, AdapterName); } catch (Exception) { /* nom d'appareil facultatif */ }
+                    renamed++;
+                }
+            return renamed;
+        }
+        catch (UnauthorizedAccessException ex)
+        {
+            LastError = ex.ToString();
+            return -1;
+        }
+        catch (Exception ex)
+        {
+            LastError = ex.ToString();
+            return renamed > 0 ? renamed : -1;
+        }
+    }
+
+    /// <summary>Renomme dans ce processus, et ne demande les droits admin que si Windows refuse. True si tout porte le bon nom.</summary>
+    public static bool RenameAll() => Rename() >= 0 || RequestElevatedRename();
 
     /// <summary>Relance l'app en admin pour renommer. Retourne false si l'utilisateur refuse.</summary>
     public static bool RequestElevatedRename()
@@ -41,27 +86,17 @@ public static class CableRenamer
         }
     }
 
-    /// <summary>Appelé dans le processus admin. Retourne le code de sortie.</summary>
+    /// <summary>Appelé avec <see cref="Argument"/> (processus admin ou installateur). Retourne le code de sortie.</summary>
     public static int RunElevated()
     {
-        try
-        {
-            using var enumerator = new MMDeviceEnumerator();
-            int renamed = 0;
-            foreach (var flow in new[] { DataFlow.Capture, DataFlow.Render })
-                foreach (var d in enumerator.EnumerateAudioEndPoints(flow, DeviceState.Active))
-                    if (DeviceService.IsCable(d))
-                    {
-                        SetName(d.ID, DeviceDesc, flow == DataFlow.Capture ? MicName : SpeakerName);
-                        try { SetName(d.ID, InterfaceName, AdapterName); } catch (Exception) { /* nom d'appareil facultatif */ }
-                        renamed++;
-                    }
-            return renamed > 0 ? 0 : 2;
-        }
-        catch (Exception)
-        {
-            return 1;
-        }
+        int n = Rename();
+        if (n < 0) try { File.WriteAllText(Path.Combine(Path.GetTempPath(), "se7en-voice-rename.log"), LastError); } catch (IOException) { }
+        return n >= 0 ? 0 : 1;
+    }
+
+    private static string Safe(Func<string> get)
+    {
+        try { return get() ?? ""; } catch (Exception) { return ""; }
     }
 
     // --- Interop COM minimal : IMMDevice::OpenPropertyStore en écriture ---
@@ -71,7 +106,9 @@ public static class CableRenamer
 
     private static void SetName(string deviceId, PropKey key, string name)
     {
-        var enumerator = (IMMDeviceEnumerator)new MMDeviceEnumeratorCom();
+        // Par le CLSID et non « new » : NAudio a déjà enveloppé ce même objet COM sous son propre type,
+        // et le cast vers une classe COM locale échoue (InvalidCastException).
+        var enumerator = (IMMDeviceEnumerator)Activator.CreateInstance(Type.GetTypeFromCLSID(EnumeratorClsid)!)!;
         Marshal.ThrowExceptionForHR(enumerator.GetDevice(deviceId, out var device));
         Marshal.ThrowExceptionForHR(device.OpenPropertyStore(2 /* STGM_READWRITE */, out var store));
         var value = new PropVariant { vt = 31 /* VT_LPWSTR */, pointer = Marshal.StringToCoTaskMemUni(name) };
@@ -100,8 +137,7 @@ public static class CableRenamer
         public IntPtr pointer, pointer2;
     }
 
-    [ComImport, Guid("BCDE0395-E52F-467C-8E3D-C4579291692E")]
-    private class MMDeviceEnumeratorCom { }
+    private static readonly Guid EnumeratorClsid = new("BCDE0395-E52F-467C-8E3D-C4579291692E");
 
     [ComImport, Guid("A95664D2-9614-4F35-A746-DE8DB63617E6"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
     private interface IMMDeviceEnumerator

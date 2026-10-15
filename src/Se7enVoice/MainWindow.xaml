@@ -1016,15 +1016,39 @@
                                             </WrapPanel>
                                         </StackPanel>
                                         <StackPanel Visibility="{Binding CableFound, Converter={x:Static vm:Converters.BoolToVisibility}}">
-                                            <TextBlock Style="{StaticResource BodyText}" Margin="0,0,0,10">
-                                                <Run Text="Dans Discord : Paramètres → Voix et vidéo → Périphérique d'entrée → choisissez" />
-                                                <Run Text="{Binding CableName, Mode=OneWay}" Foreground="{DynamicResource TextStrongBrush}" FontFamily="{StaticResource FontMedium}" /><Run Text="." />
-                                            </TextBlock>
-                                            <TextBlock Style="{StaticResource BodyText}" Margin="0,0,0,12"
-                                                       Text="Pareil dans vos jeux. Coupez aussi la suppression de bruit de Discord (Krisp) : se7en Voice s'en charge." />
-                                            <StackPanel Visibility="{Binding CableRenamed, Converter={x:Static vm:Converters.InverseBoolToVisibility}}">
+                                            <TextBlock c:Ui.Caps="Dans Discord et vos jeux" Style="{StaticResource MicroText}" Margin="0,0,0,8" />
+                                            <!-- Quoi mettre en entrée et en sortie -->
+                                            <Border Style="{StaticResource Well}" Padding="12,4">
+                                                <StackPanel>
+                                                    <Border BorderBrush="{DynamicResource BorderSubtleBrush}" BorderThickness="0,0,0,1" Padding="0,8">
+                                                        <DockPanel>
+                                                            <Border DockPanel.Dock="Left" Style="{StaticResource SolidBadge}" Width="64" Margin="0,0,12,0" VerticalAlignment="Top">
+                                                                <TextBlock Text="ENTRÉE" Style="{StaticResource BadgeText}" HorizontalAlignment="Center" />
+                                                            </Border>
+                                                            <StackPanel>
+                                                                <TextBlock Text="{Binding CableName}" Style="{StaticResource StrongText}" Foreground="{DynamicResource TextStrongBrush}" FontFamily="{StaticResource FontMedium}" TextWrapping="Wrap" />
+                                                                <TextBlock Text="Périphérique d'entrée (micro) : votre voix modifiée" Style="{StaticResource CaptionText}" Foreground="{DynamicResource TextTertiaryBrush}" Margin="0,2,0,0" TextWrapping="Wrap" />
+                                                            </StackPanel>
+                                                        </DockPanel>
+                                                    </Border>
+                                                    <DockPanel Margin="0,8">
+                                                        <Border DockPanel.Dock="Left" Style="{StaticResource Badge}" Width="64" Margin="0,0,12,0" VerticalAlignment="Top" BorderBrush="{DynamicResource BorderStrongBrush}"
+                                                                TextElement.Foreground="{DynamicResource TextPrimaryBrush}">
+                                                            <TextBlock Text="SORTIE" Style="{StaticResource BadgeText}" HorizontalAlignment="Center" />
+                                                        </Border>
+                                                        <StackPanel>
+                                                            <TextBlock Text="{Binding SelectedMonitor.Name, FallbackValue='Votre casque'}" Style="{StaticResource StrongText}" Foreground="{DynamicResource TextStrongBrush}" FontFamily="{StaticResource FontMedium}" TextWrapping="Wrap" />
+                                                            <TextBlock Text="Périphérique de sortie : votre casque, comme d'habitude. Jamais « Seven Microphone - Sortie »." Style="{StaticResource CaptionText}"
+                                                                       Foreground="{DynamicResource TextTertiaryBrush}" Margin="0,2,0,0" TextWrapping="Wrap" />
+                                                        </StackPanel>
+                                                    </DockPanel>
+                                                </StackPanel>
+                                            </Border>
+                                            <TextBlock Style="{StaticResource CaptionText}" Margin="0,10,0,0" TextWrapping="Wrap" Foreground="{DynamicResource TextTertiaryBrush}"
+                                                       Text="Coupez aussi la suppression de bruit de Discord (Krisp) : se7en Voice s'en charge." />
+                                            <StackPanel Visibility="{Binding CableRenamed, Converter={x:Static vm:Converters.InverseBoolToVisibility}}" Margin="0,12,0,0">
                                                 <TextBlock Style="{StaticResource CaptionText}" Margin="0,0,0,10" TextWrapping="Wrap"
-                                                           Text="Le micro virtuel s'appelle encore « CABLE Output ». Renommez-le en « Seven Microphone » pour le retrouver facilement (Windows demandera l'autorisation)." />
+                                                           Text="Le micro virtuel porte encore son nom d'origine. Renommez-le pour voir clairement « Entrée » et « Sortie » dans Discord." />
                                                 <Button Style="{StaticResource SmallSecondaryButton}" HorizontalAlignment="Left" c:Ui.Icon="&#xE8AC;" Content="Renommer" Click="RenameCable_Click" />
                                             </StackPanel>
                                         </StackPanel>
