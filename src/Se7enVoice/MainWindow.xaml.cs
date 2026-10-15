@@ -137,7 +137,7 @@ public partial class MainWindow : Window
             {
                 _trayHintShown = true;
                 _tray.ShowBalloonTip(4000, "se7en Voice tourne toujours",
-                    "Ta voix reste active. Clic droit sur l'icône près de l'horloge pour quitter.", Forms.ToolTipIcon.Info);
+                    "Votre voix reste active. Clic droit sur l'icône près de l'horloge pour quitter.", Forms.ToolTipIcon.Info);
             }
             return;
         }
@@ -257,7 +257,7 @@ public partial class MainWindow : Window
         if (name.Length == 0) { PresetNameBox.Focus(); return; }
         if (_vm.Presets.Any(p => string.Equals(p.Name, name, StringComparison.CurrentCultureIgnoreCase)))
         {
-            ShowToast("Ce nom est déjà pris par une voix de base · choisis-en un autre");
+            ShowToast("Ce nom est déjà pris par une voix de base · choisissez-en un autre");
             return;
         }
         SaveDialog.Visibility = Visibility.Collapsed;
@@ -371,8 +371,8 @@ public partial class MainWindow : Window
     {
         _vm.RefreshDevices(restart: true);
         ShowToast(_vm.CableFound
-            ? "Micro virtuel trouvé · choisis « " + _vm.CableName + " » dans Discord"
-            : "Micro virtuel toujours absent · redémarre le PC après l'installation");
+            ? "Micro virtuel trouvé · choisissez « " + _vm.CableName + " » dans Discord"
+            : "Micro virtuel toujours absent · redémarrez le PC après l'installation");
     }
 
     private void RenameCable_Click(object sender, RoutedEventArgs e)
@@ -383,13 +383,12 @@ public partial class MainWindow : Window
 
     // ---------- Effets visuels ----------
 
-    /// <summary>Notification « titre · détail » : le titre en gras, le détail en dessous.</summary>
+    /// <summary>Notification « titre · détail » : le titre en capitales espacées, le détail en dessous (sans titre : « Info »).</summary>
     private void ShowToast(string message)
     {
         int cut = message.IndexOf(" · ", StringComparison.Ordinal);
-        ToastTitle.Text = cut > 0 ? message[..cut] : message;
-        ToastText.Text = cut > 0 ? message[(cut + 3)..] : "";
-        ToastText.Visibility = cut > 0 ? Visibility.Visible : Visibility.Collapsed;
+        ToastTitle.Text = Controls.Caps.Space(cut > 0 ? message[..cut] : "Info");
+        ToastText.Text = cut > 0 ? message[(cut + 3)..] : message;
         var anim = new DoubleAnimationUsingKeyFrames();
         anim.KeyFrames.Add(new EasingDoubleKeyFrame(1, KeyTime.FromTimeSpan(TimeSpan.FromMilliseconds(200)), new CubicEase { EasingMode = EasingMode.EaseOut }));
         anim.KeyFrames.Add(new LinearDoubleKeyFrame(1, KeyTime.FromTimeSpan(TimeSpan.FromMilliseconds(3400))));
@@ -400,6 +399,6 @@ public partial class MainWindow : Window
 
     private void ShowPresetToast(PresetItem p)
     {
-        if (IsVisible) ShowToast($"Voix appliquée · « {p.Name} » est active sur ton micro");
+        if (IsVisible) ShowToast($"Voix appliquée · « {p.Name} » est active sur votre micro");
     }
 }

@@ -68,8 +68,8 @@ public static class Tones
     private static readonly string[] Order = ["violet", "mint", "peach", "sky", "rose"];
 
     /// <summary>
-    /// Teintes des presets (noms historiques gardés pour les presets déjà partagés) vers les dégradés
-    /// « puits d'icône » du design Centrale Audio : violet, menthe, rose, pêche, ciel, neutre.
+    /// Teintes des presets (noms historiques gardés pour les presets déjà partagés) vers les couleurs signal
+    /// du design Centrale, affichées en petite LED : violet, vert, orange, ambre, cyan, gris clair.
     /// </summary>
     public static Brush Brush(string tone) => tone switch
     {

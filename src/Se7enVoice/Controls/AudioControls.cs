@@ -4,23 +4,39 @@ using System.Windows.Media;
 
 namespace Se7enVoice.Controls;
 
-/// <summary>Pinceaux des contrôles dessinés : lus dans le thème actif (clair/sombre) à chaque rendu.</summary>
+/// <summary>Pinceaux et polices des contrôles dessinés (design « Centrale » : noir, métal, lignes blanches, LEDs rares).</summary>
 internal static class Ink
 {
-    public static readonly Brush Green = Freeze(new SolidColorBrush(Color.FromRgb(0x34, 0xC7, 0x59)));
-    public static readonly Brush Amber = Freeze(new SolidColorBrush(Color.FromRgb(0xFF, 0xB0, 0x20)));
-    public static readonly Brush Red = Freeze(new SolidColorBrush(Color.FromRgb(0xFF, 0x45, 0x3A)));
-    public static readonly Brush Violet = Freeze(new SolidColorBrush(Color.FromRgb(0x7A, 0x64, 0xF0)));
-    public static readonly Brush White = Freeze(new SolidColorBrush(Colors.White));
-    public static readonly Brush InkBrush = Freeze(new SolidColorBrush(Color.FromRgb(0x14, 0x14, 0x16)));
-    public static readonly Brush Stone = Freeze(new SolidColorBrush(Color.FromArgb(0x80, 0x9A, 0x93, 0x8D)));
-    public static readonly Brush CapShadow = Freeze(new SolidColorBrush(Color.FromArgb(0x33, 0, 0, 0)));
-    public static readonly Pen CapLine = FreezePen(new Pen(new SolidColorBrush(Color.FromArgb(0x40, 0x14, 0x14, 0x16)), 2) { StartLineCap = PenLineCap.Round, EndLineCap = PenLineCap.Round });
+    public static readonly Brush Bone = Freeze(new SolidColorBrush(Color.FromRgb(0xE6, 0xE7, 0xEB)));
+    public static readonly Brush Bone50 = Freeze(new SolidColorBrush(Color.FromRgb(0xF4, 0xF4, 0xF6)));
+    public static readonly Brush Orange = Freeze(new SolidColorBrush(Color.FromRgb(0xFF, 0x6A, 0x3D)));
+    public static readonly Brush Red = Freeze(new SolidColorBrush(Color.FromRgb(0xFF, 0x3D, 0x33)));
+    public static readonly Brush Muted = Freeze(new SolidColorBrush(Color.FromRgb(0x4A, 0x4B, 0x53)));
+    public static readonly Brush Off = Freeze(new SolidColorBrush(Color.FromArgb(0x14, 0xFF, 0xFF, 0xFF)));
+    public static readonly Brush Faint = Freeze(new SolidColorBrush(Color.FromArgb(0x14, 0xFF, 0xFF, 0xFF)));
+    public static readonly Brush Secondary = Freeze(new SolidColorBrush(Color.FromRgb(0xA9, 0xAB, 0xB4)));
+    public static readonly Brush Tertiary = Freeze(new SolidColorBrush(Color.FromRgb(0x8A, 0x8D, 0x98)));
+    public static readonly Brush Slot = Freeze(new SolidColorBrush(Colors.Black));
+    public static readonly Pen SlotEdge = FreezePen(new Pen(new SolidColorBrush(Color.FromArgb(0x0A, 0xFF, 0xFF, 0xFF)), 1));
+    public static readonly Pen Black1 = FreezePen(new Pen(Brushes.Black, 1));
 
-    /// <summary>Vu-mètres : vert, puis ambre, puis rouge près du 0 dB.</summary>
-    public static Brush Heat(double f) => f < 0.7 ? Green : f < 0.88 ? Amber : Red;
+    public static readonly Typeface Mono = Face("IBM Plex Mono Medium", FontWeights.Medium);
+    public static readonly Typeface Label = Face("Outfit Medium", FontWeights.Medium);
+
+    private static Typeface Face(string family, FontWeight weight) =>
+        new(new FontFamily(new Uri("pack://application:,,,/"), "./Assets/Fonts/#" + family), FontStyles.Normal, weight, FontStretches.Normal);
+
+    /// <summary>Vu-mètres : blanc, orange au-delà de 80 %, rouge au-delà de 94 %.</summary>
+    public static Brush Heat(double f) => f >= 0.94 ? Red : f >= 0.8 ? Orange : Bone;
 
     public static Brush Theme(FrameworkElement e, string key, Brush fallback) => e.TryFindResource(key) as Brush ?? fallback;
+
+    public static Brush Alpha(Brush b, double a)
+    {
+        if (b is not SolidColorBrush s) return b;
+        var c = s.Color;
+        return Freeze(new SolidColorBrush(Color.FromArgb((byte)(c.A * a), c.R, c.G, c.B)));
+    }
 
     public static T Freeze<T>(T f) where T : Freezable { f.Freeze(); return f; }
     public static Pen FreezePen(Pen p) { p.Freeze(); return p; }
@@ -30,14 +46,14 @@ internal static class Ink
             new FrameworkPropertyMetadata(def, render ? FrameworkPropertyMetadataOptions.AffectsRender : FrameworkPropertyMetadataOptions.None));
 }
 
-/// <summary>Piste de slider : rail 6 px en creux, remplissage couleur depuis l'origine.</summary>
+/// <summary>Piste de slider horizontal : fente noire en creux, filet de couleur depuis l'origine.</summary>
 public sealed class PillTrack : FrameworkElement
 {
     public static readonly DependencyProperty ValueProperty = Ink.Dp<PillTrack, double>(nameof(Value), 0);
     public static readonly DependencyProperty MinimumProperty = Ink.Dp<PillTrack, double>(nameof(Minimum), 0);
     public static readonly DependencyProperty MaximumProperty = Ink.Dp<PillTrack, double>(nameof(Maximum), 1);
     public static readonly DependencyProperty OriginProperty = Ink.Dp<PillTrack, double>(nameof(Origin), double.NaN);
-    public static readonly DependencyProperty ToneProperty = Ink.Dp<PillTrack, Brush>(nameof(Tone), Ink.Violet);
+    public static readonly DependencyProperty ToneProperty = Ink.Dp<PillTrack, Brush>(nameof(Tone), Ink.Bone);
 
     /// <summary>À poser sur un Slider : valeur d'où part le remplissage (NaN = depuis la gauche).</summary>
     public static readonly DependencyProperty SliderOriginProperty =
@@ -55,21 +71,26 @@ public sealed class PillTrack : FrameworkElement
     {
         double w = ActualWidth, h = ActualHeight;
         if (w <= 0 || h <= 0) return;
-        const double t = 6;
-        double y = (h - t) / 2;
-        dc.DrawRoundedRectangle(Ink.Theme(this, "WellStrongBrush", Ink.Stone), null, new Rect(0, y, w, t), t / 2, t / 2);
+        double y = h / 2;
+        // Graduations fines sous la fente
+        for (int i = 0; i <= 10; i++)
+        {
+            double x = Math.Round(i * (w - 1) / 10) + 0.5;
+            dc.DrawRectangle(Ink.Faint, null, new Rect(x, y - (i % 5 == 0 ? 7 : 5), 1, i % 5 == 0 ? 14 : 10));
+        }
+        dc.DrawRoundedRectangle(Ink.Slot, Ink.SlotEdge, new Rect(0, y - 2, w, 4), 2, 2);
         double range = Maximum - Minimum;
         if (range <= 0) return;
         double f = Math.Clamp((Value - Minimum) / range, 0, 1);
         double o = double.IsNaN(Origin) ? 0 : Math.Clamp((Origin - Minimum) / range, 0, 1);
         double x0 = Math.Min(o, f) * w, x1 = Math.Max(o, f) * w;
-        if (x1 - x0 >= 0.5) dc.DrawRoundedRectangle(Tone, null, new Rect(x0, y, x1 - x0, t), t / 2, t / 2);
+        if (x1 - x0 >= 0.5) dc.DrawRoundedRectangle(Ink.Alpha(Tone, 0.75), null, new Rect(x0, y - 1, x1 - x0, 2), 1, 1);
     }
 }
 
 /// <summary>
-/// Potard (Knob du design system) : arc de 270° coloré autour d'un capuchon blanc à repère sombre.
-/// Glisser vers le haut/bas ou molette ; double-clic = valeur neutre. Libellé en petites capitales, valeur en mono.
+/// Bouton rotatif noir brillant (Knob du design) : arc fin de 270°, repère blanc lumineux, butées aux extrémités.
+/// Glisser vers le haut/bas (Maj = fin) ou molette ; double-clic = valeur neutre. Libellé en capitales, valeur en mono.
 /// </summary>
 public sealed class Knob : FrameworkElement
 {
@@ -77,26 +98,36 @@ public sealed class Knob : FrameworkElement
         new FrameworkPropertyMetadata(0.0, FrameworkPropertyMetadataOptions.BindsTwoWayByDefault | FrameworkPropertyMetadataOptions.AffectsRender));
     public static readonly DependencyProperty MinimumProperty = Ink.Dp<Knob, double>(nameof(Minimum), 0);
     public static readonly DependencyProperty MaximumProperty = Ink.Dp<Knob, double>(nameof(Maximum), 1);
-    /// <summary>Valeur neutre (départ de l'arc d'un potard bipolaire, et valeur du double-clic). NaN = minimum.</summary>
+    /// <summary>Valeur neutre (départ de l'arc d'un bouton bipolaire, et valeur du double-clic). NaN = minimum.</summary>
     public static readonly DependencyProperty OriginProperty = Ink.Dp<Knob, double>(nameof(Origin), double.NaN);
-    public static readonly DependencyProperty ToneProperty = Ink.Dp<Knob, Brush>(nameof(Tone), Ink.Violet);
+    public static readonly DependencyProperty ToneProperty = Ink.Dp<Knob, Brush>(nameof(Tone), Ink.Bone);
     public static readonly DependencyProperty LabelProperty = Ink.Dp<Knob, string>(nameof(Label), "");
     public static readonly DependencyProperty FormatProperty = Ink.Dp<Knob, string>(nameof(Format), "{0:P0}");
     /// <summary>Pas d'aimantation (0 = libre).</summary>
     public static readonly DependencyProperty TickProperty = Ink.Dp<Knob, double>(nameof(Tick), 0, render: false);
+    /// <summary>Diamètre du bouton (le reste de la largeur sert à l'arc et au libellé).</summary>
+    public static readonly DependencyProperty DiameterProperty = Ink.Dp<Knob, double>(nameof(Diameter), 48);
 
-    private static readonly Typeface ReadoutFace = new(new FontFamily(new Uri("pack://application:,,,/"), "./Assets/Fonts/#Geist Mono Medium"),
-        FontStyles.Normal, FontWeights.Medium, FontStretches.Normal);
-    private static readonly Typeface LabelFace = new(new FontFamily(new Uri("pack://application:,,,/"), "./Assets/Fonts/#Geist Medium"),
-        FontStyles.Normal, FontWeights.Medium, FontStretches.Normal);
+    private static readonly Brush BodyBrush = Ink.Freeze(new RadialGradientBrush(
+        [new GradientStop(Color.FromRgb(0x34, 0x34, 0x3B), 0), new GradientStop(Color.FromRgb(0x14, 0x14, 0x17), 0.45), new GradientStop(Color.FromRgb(0x05, 0x05, 0x06), 1)])
+    { Center = new Point(0.5, 0.3), GradientOrigin = new Point(0.5, 0.3), RadiusX = 0.75, RadiusY = 0.75 });
+    private static readonly Brush ShadowBrush = Ink.Freeze(new RadialGradientBrush(
+        [new GradientStop(Color.FromArgb(0xB3, 0, 0, 0), 0.55), new GradientStop(Color.FromArgb(0, 0, 0, 0), 1)]));
+    private static readonly Pen RimLight = Ink.FreezePen(new Pen(new SolidColorBrush(Color.FromArgb(0x40, 0xFF, 0xFF, 0xFF)), 1));
+    private static readonly Pen BezelPen = Ink.FreezePen(new Pen(new SolidColorBrush(Color.FromRgb(0x3A, 0x3A, 0x41)), 2.5));
+    private static readonly Pen TrackPen = Ink.FreezePen(new Pen(new SolidColorBrush(Color.FromArgb(0x26, 0xFF, 0xFF, 0xFF)), 3) { StartLineCap = PenLineCap.Round, EndLineCap = PenLineCap.Round });
+    private static readonly Pen TickPen = Ink.FreezePen(new Pen(new SolidColorBrush(Color.FromArgb(0x4D, 0xFF, 0xFF, 0xFF)), 1));
+    private static readonly Pen StopPen = Ink.FreezePen(new Pen(new SolidColorBrush(Color.FromArgb(0x99, 0xFF, 0xFF, 0xFF)), 1.5));
+    private static readonly Pen IndicatorGlow = Ink.FreezePen(new Pen(new SolidColorBrush(Color.FromArgb(0x40, 0xFF, 0xFF, 0xFF)), 6) { StartLineCap = PenLineCap.Round, EndLineCap = PenLineCap.Round });
+    private static readonly Pen Indicator = Ink.FreezePen(new Pen(Ink.Bone50, 3) { StartLineCap = PenLineCap.Round, EndLineCap = PenLineCap.Round });
 
     private Point _start;
     private double _startValue;
 
     public Knob()
     {
-        Width = 72;
-        Height = 100;
+        Width = 76;
+        Height = 104;
         Cursor = Cursors.SizeNS;
         Focusable = false;
     }
@@ -109,6 +140,7 @@ public sealed class Knob : FrameworkElement
     public string Label { get => (string)GetValue(LabelProperty); set => SetValue(LabelProperty, value); }
     public string Format { get => (string)GetValue(FormatProperty); set => SetValue(FormatProperty, value); }
     public double Tick { get => (double)GetValue(TickProperty); set => SetValue(TickProperty, value); }
+    public double Diameter { get => (double)GetValue(DiameterProperty); set => SetValue(DiameterProperty, value); }
 
     private double Neutral => double.IsNaN(Origin) ? Minimum : Origin;
     private double Fraction => Maximum > Minimum ? Math.Clamp((Value - Minimum) / (Maximum - Minimum), 0, 1) : 0;
@@ -133,7 +165,7 @@ public sealed class Knob : FrameworkElement
     {
         if (!IsMouseCaptured) return;
         double dy = _start.Y - e.GetPosition(this).Y;
-        double speed = Keyboard.Modifiers.HasFlag(ModifierKeys.Shift) ? 600 : 160;
+        double speed = Keyboard.Modifiers.HasFlag(ModifierKeys.Shift) ? 600 : 180;
         SetFromFraction(_startValue + dy / speed);
     }
 
@@ -148,42 +180,59 @@ public sealed class Knob : FrameworkElement
 
     protected override void OnRender(DrawingContext dc)
     {
-        double size = Math.Min(ActualWidth, 62);
-        double c = ActualWidth / 2, cy = size / 2, r = size / 2 - 3;
+        double d = Math.Min(Diameter, ActualWidth - 20);
+        double c = ActualWidth / 2, cy = d / 2 + 10, r = d / 2 + 5;
         dc.DrawRectangle(Brushes.Transparent, null, new Rect(0, 0, ActualWidth, ActualHeight));
 
-        var trackPen = new Pen(Ink.Theme(this, "WellStrongBrush", Ink.Stone), 5) { StartLineCap = PenLineCap.Round, EndLineCap = PenLineCap.Round };
-        dc.DrawGeometry(null, trackPen, Arc(c, cy, r, -135, 135));
+        // Graduations (11 crans) et butées aux extrémités
+        for (int i = 0; i <= 10; i++)
+        {
+            double a = -135 + 27 * i;
+            bool end = i == 0 || i == 10;
+            dc.DrawLine(end ? StopPen : TickPen, Polar(c, cy, r + 3, a), Polar(c, cy, r + (end ? 8 : 6), a));
+        }
+
+        // Piste de course, puis arc de valeur lumineux (depuis le neutre pour un réglage bipolaire)
+        dc.DrawGeometry(null, TrackPen, Arc(c, cy, r, -135, 135));
         double range = Maximum - Minimum;
         double from = range > 0 && !double.IsNaN(Origin) ? -135 + 270 * Math.Clamp((Origin - Minimum) / range, 0, 1) : -135;
         double ang = -135 + 270 * Fraction;
         if (Math.Abs(ang - from) > 0.5)
         {
-            var pen = new Pen(Tone, 5) { StartLineCap = PenLineCap.Round, EndLineCap = PenLineCap.Round };
-            dc.DrawGeometry(null, pen, Arc(c, cy, r, Math.Min(from, ang), Math.Max(from, ang)));
+            var arc = Arc(c, cy, r, Math.Min(from, ang), Math.Max(from, ang));
+            dc.DrawGeometry(null, new Pen(Ink.Alpha(Tone, 0.22), 7) { StartLineCap = PenLineCap.Round, EndLineCap = PenLineCap.Round }, arc);
+            dc.DrawGeometry(null, new Pen(Tone, 3) { StartLineCap = PenLineCap.Round, EndLineCap = PenLineCap.Round }, arc);
         }
-        // Capuchon blanc avec ombre douce et repère sombre
-        double cap = r - 8;
-        dc.DrawEllipse(Ink.CapShadow, null, new Point(c, cy + 2.5), cap, cap);
-        dc.DrawEllipse(Ink.White, null, new Point(c, cy), cap, cap);
-        var p1 = Polar(c, cy, cap - 3, ang);
-        var p0 = Polar(c, cy, cap - 11, ang);
-        dc.DrawLine(new Pen(Ink.InkBrush, 3) { StartLineCap = PenLineCap.Round, EndLineCap = PenLineCap.Round }, p0, p1);
+
+        // Corps : ombre, bague métal, dégradé noir brillant, reflet en haut
+        double k = d / 2 - 2;
+        dc.DrawEllipse(ShadowBrush, null, new Point(c, cy + 4), k + 6, k + 6);
+        dc.DrawEllipse(Brushes.Black, BezelPen, new Point(c, cy), k + 1.5, k + 1.5);
+        dc.DrawEllipse(BodyBrush, Ink.Black1, new Point(c, cy), k - 1, k - 1);
+        dc.DrawGeometry(null, RimLight, Arc(c, cy, k - 2.5, -60, 60));
+
+        // Repère : trait blanc du bord vers le centre
+        var p0 = Polar(c, cy, k - 3, ang);
+        var p1 = Polar(c, cy, k * 0.35, ang);
+        dc.DrawLine(IndicatorGlow, p0, p1);
+        dc.DrawLine(Indicator, p0, p1);
 
         double dpi = VisualTreeHelper.GetDpi(this).PixelsPerDip;
-        var culture = System.Globalization.CultureInfo.CurrentCulture;
+        var culture = System.Globalization.CultureInfo.InvariantCulture;
         string text;
         try { text = string.Format(culture, Format, Value); }
         catch (FormatException) { text = Value.ToString("0.##"); }
+        double y = cy + r + 7;
         if (!string.IsNullOrEmpty(Label))
         {
-            var label = new FormattedText(Label.ToUpper(culture), culture, FlowDirection.LeftToRight, LabelFace, 10.5,
-                Ink.Theme(this, "TextSecondaryBrush", Ink.Stone), dpi)
-            { MaxTextWidth = Math.Max(10, ActualWidth + 14), Trimming = TextTrimming.CharacterEllipsis, TextAlignment = TextAlignment.Center, MaxLineCount = 1 };
-            dc.DrawText(label, new Point(c - label.MaxTextWidth / 2, size + 4));
+            var label = new FormattedText(Caps.Space(Label), culture, FlowDirection.LeftToRight, Ink.Label, 10,
+                Ink.Theme(this, "TextSecondaryBrush", Ink.Secondary), dpi)
+            { MaxTextWidth = Math.Max(10, ActualWidth + 12), Trimming = TextTrimming.CharacterEllipsis, TextAlignment = TextAlignment.Center, MaxLineCount = 1 };
+            dc.DrawText(label, new Point(c - label.MaxTextWidth / 2, y));
+            y += 15;
         }
-        var readout = new FormattedText(text, culture, FlowDirection.LeftToRight, ReadoutFace, 12, Ink.Theme(this, "TextPrimaryBrush", Ink.InkBrush), dpi);
-        dc.DrawText(readout, new Point(c - readout.Width / 2, size + 20));
+        var readout = new FormattedText(text, culture, FlowDirection.LeftToRight, Ink.Mono, 10.5, Ink.Theme(this, "TextPrimaryBrush", Ink.Bone), dpi);
+        dc.DrawText(readout, new Point(c - readout.Width / 2, y));
     }
 
     private static Point Polar(double cx, double cy, double r, double deg)
@@ -205,7 +254,10 @@ public sealed class Knob : FrameworkElement
     }
 }
 
-/// <summary>Fader vertical : rail fin en creux, remplissage couleur, curseur blanc en pilule, repère « unité » (0 dB).</summary>
+/// <summary>
+/// Fader de console : graduations, fente noire, filet de couleur, capuchon métal à ligne lumineuse.
+/// Repère « unité » (0 dB) plus marqué ; double-clic = unité.
+/// </summary>
 public sealed class Fader : FrameworkElement
 {
     public static readonly DependencyProperty ValueProperty = DependencyProperty.Register(nameof(Value), typeof(double), typeof(Fader),
@@ -214,14 +266,21 @@ public sealed class Fader : FrameworkElement
     public static readonly DependencyProperty MaximumProperty = Ink.Dp<Fader, double>(nameof(Maximum), 1);
     /// <summary>Repère « unité » (ex. 0 dB) et valeur du double-clic. NaN = aucun.</summary>
     public static readonly DependencyProperty ZeroProperty = Ink.Dp<Fader, double>(nameof(Zero), double.NaN);
-    public static readonly DependencyProperty ToneProperty = Ink.Dp<Fader, Brush>(nameof(Tone), Ink.Violet);
+    public static readonly DependencyProperty ToneProperty = Ink.Dp<Fader, Brush>(nameof(Tone), Ink.Bone);
     public static readonly DependencyProperty IsMutedProperty = Ink.Dp<Fader, bool>(nameof(IsMuted), false);
 
-    private const double CapH = 22, CapW = 40;
+    private const double CapH = 30;
+
+    private static readonly Brush CapBrush = Ink.Freeze(new LinearGradientBrush(
+        [new GradientStop(Color.FromRgb(0x4A, 0x4B, 0x53), 0), new GradientStop(Color.FromRgb(0x26, 0x26, 0x2C), 0.48),
+         new GradientStop(Color.FromRgb(0x1C, 0x1C, 0x21), 0.52), new GradientStop(Color.FromRgb(0x2C, 0x2C, 0x33), 1)], 90));
+    private static readonly Brush CapShadow = Ink.Freeze(new SolidColorBrush(Color.FromArgb(0x80, 0, 0, 0)));
+    private static readonly Pen CapLight = Ink.FreezePen(new Pen(new SolidColorBrush(Color.FromArgb(0x2E, 0xFF, 0xFF, 0xFF)), 1));
+    private static readonly Pen UnityPen = Ink.FreezePen(new Pen(new SolidColorBrush(Color.FromArgb(0x59, 0xFF, 0xFF, 0xFF)), 1));
 
     public Fader()
     {
-        Width = 44;
+        Width = 36;
         Height = 200;
         Cursor = Cursors.SizeNS;
     }
@@ -268,33 +327,44 @@ public sealed class Fader : FrameworkElement
         double w = ActualWidth, h = ActualHeight;
         if (w <= 0 || h <= 0) return;
         dc.DrawRectangle(Brushes.Transparent, null, new Rect(0, 0, w, h));
-        double cx = w / 2, bottom = h - CapH / 2;
-        const double t = 8;
-        dc.DrawRoundedRectangle(Ink.Theme(this, "WellStrongBrush", Ink.Stone), null, new Rect(cx - t / 2, 0, t, h), t / 2, t / 2);
+        double cx = Math.Round(w / 2), top = CapH / 2, bottom = h - CapH / 2;
 
+        // Graduations
+        for (int i = 0; i <= 10; i++)
+        {
+            double y = Math.Round(top + i * Travel / 10) + 0.5;
+            double inset = i % 5 == 0 ? 2 : 6;
+            dc.DrawRectangle(Ink.Faint, null, new Rect(inset, y, w - inset * 2, 1));
+        }
         if (!double.IsNaN(Zero))
         {
-            double zy = bottom - Frac(Zero) * Travel;
-            var pen = new Pen(Ink.Theme(this, "TextTertiaryBrush", Ink.Stone), 1);
-            dc.DrawLine(pen, new Point(2, zy), new Point(w - 2, zy));
+            double zy = Math.Round(bottom - Frac(Zero) * Travel) + 0.5;
+            dc.DrawLine(UnityPen, new Point(0, zy), new Point(w, zy));
         }
-        double y = bottom - Frac(Value) * Travel;
-        if (h - y > 1) dc.DrawRoundedRectangle(IsMuted ? Ink.Stone : Tone, null, new Rect(cx - t / 2, y, t, h - y), t / 2, t / 2);
 
-        var cap = new Rect(cx - CapW / 2, y - CapH / 2, CapW, CapH);
-        dc.DrawRoundedRectangle(Ink.CapShadow, null, new Rect(cap.X, cap.Y + 3, cap.Width, cap.Height), CapH / 2, CapH / 2);
-        dc.DrawRoundedRectangle(Ink.White, null, cap, CapH / 2, CapH / 2);
-        dc.DrawLine(Ink.CapLine, new Point(cx - 8, y), new Point(cx + 8, y));
+        // Fente et filet de niveau
+        dc.DrawRoundedRectangle(Ink.Slot, Ink.SlotEdge, new Rect(cx - 2, top, 4, bottom - top), 2, 2);
+        double vy = bottom - Frac(Value) * Travel;
+        var tone = IsMuted ? Ink.Muted : Tone;
+        if (bottom - vy > 0.5) dc.DrawRoundedRectangle(Ink.Alpha(tone, 0.7), null, new Rect(cx - 1, vy, 2, bottom - vy), 1, 1);
+
+        // Capuchon métal
+        var cap = new Rect(1, vy - CapH / 2, w - 2, CapH);
+        dc.DrawRoundedRectangle(CapShadow, null, new Rect(cap.X, cap.Y + 4, cap.Width, cap.Height), 4, 4);
+        dc.DrawRoundedRectangle(CapBrush, Ink.Black1, cap, 4, 4);
+        dc.DrawLine(CapLight, new Point(cap.X + 3, cap.Y + 1.5), new Point(cap.Right - 3, cap.Y + 1.5));
+        dc.DrawRoundedRectangle(Ink.Alpha(tone, 0.45), null, new Rect(cap.X + 3, vy - 2.5, cap.Width - 6, 5), 2, 2);
+        dc.DrawRectangle(tone, null, new Rect(cap.X + 4, vy - 1, cap.Width - 8, 2));
     }
 }
 
-/// <summary>Vu-mètre à segments (vert → ambre → rouge) avec maintien de crête.</summary>
+/// <summary>Vumètre en matrice de points LED : blanc, orange au-delà de 80 %, rouge au-delà de 94 %, avec maintien de crête.</summary>
 public sealed class LevelMeter : FrameworkElement
 {
     public static readonly DependencyProperty ValueProperty = Ink.Dp<LevelMeter, double>(nameof(Value), 0);
     public static readonly DependencyProperty VerticalProperty = Ink.Dp<LevelMeter, bool>(nameof(Vertical), false);
     public static readonly DependencyProperty SegmentsProperty = Ink.Dp<LevelMeter, int>(nameof(Segments), 32);
-    /// <summary>Couleur unique (sinon vert/ambre/rouge).</summary>
+    /// <summary>Couleur unique (sinon blanc/orange/rouge).</summary>
     public static readonly DependencyProperty ToneProperty = Ink.Dp<LevelMeter, Brush?>(nameof(Tone), null);
 
     private double _peak;
@@ -317,17 +387,55 @@ public sealed class LevelMeter : FrameworkElement
         else if (DateTime.UtcNow - _peakAt > TimeSpan.FromMilliseconds(900)) _peak = Math.Max(v, _peak - 0.02);
         int lit = (int)Math.Round(v * n);
         int pk = _peak > 0.02 ? Math.Min(n - 1, (int)Math.Round(_peak * n) - 1) : -1;
-        var off = Ink.Theme(this, "MeterOffBrush", Ink.Stone);
-        const double gap = 2;
+        var off = Ink.Theme(this, "MeterOffBrush", Ink.Off);
         double len = Vertical ? h : w, thick = Vertical ? w : h;
-        double seg = (len - gap * (n - 1)) / n;
+        double dot = Math.Min(thick, 5), r = dot / 2;
+        double pitch = n > 1 ? (len - dot) / (n - 1) : 0;
         for (int i = 0; i < n; i++)
         {
+            double t = (i + 1.0) / n;
             bool on = i < lit || i == pk;
-            var brush = on ? (Tone ?? Ink.Heat((double)i / n)) : off;
-            double p = i * (seg + gap);
-            var r = Vertical ? new Rect(0, h - p - seg, thick, seg) : new Rect(p, 0, seg, thick);
-            dc.DrawRoundedRectangle(brush, null, r, 2, 2);
+            double p = r + i * pitch;
+            var center = Vertical ? new Point(w / 2, h - p) : new Point(p, h / 2);
+            if (!on) { dc.DrawEllipse(off, null, center, r, r); continue; }
+            var brush = Tone ?? Ink.Heat(t);
+            if (Tone is null && t >= 0.8) dc.DrawEllipse(Ink.Alpha(brush, 0.35), null, center, r + 1.5, r + 1.5);
+            dc.DrawEllipse(brush, null, center, r, r);
         }
+    }
+}
+
+/// <summary>LED (carrée par défaut, ronde avec <see cref="Round"/>) avec halo de sa couleur ; éteinte = gris enfoncé.</summary>
+public sealed class Led : FrameworkElement
+{
+    public static readonly DependencyProperty ToneProperty = Ink.Dp<Led, Brush>(nameof(Tone), Ink.Orange);
+    public static readonly DependencyProperty IsOnProperty = Ink.Dp<Led, bool>(nameof(IsOn), true);
+    public static readonly DependencyProperty RoundProperty = Ink.Dp<Led, bool>(nameof(Round), false);
+
+    public Led()
+    {
+        Width = 8;
+        Height = 8;
+        IsHitTestVisible = false;
+        VerticalAlignment = VerticalAlignment.Center;
+    }
+
+    public Brush Tone { get => (Brush)GetValue(ToneProperty); set => SetValue(ToneProperty, value); }
+    public bool IsOn { get => (bool)GetValue(IsOnProperty); set => SetValue(IsOnProperty, value); }
+    public bool Round { get => (bool)GetValue(RoundProperty); set => SetValue(RoundProperty, value); }
+
+    protected override void OnRender(DrawingContext dc)
+    {
+        double w = ActualWidth, h = ActualHeight;
+        if (w <= 0 || h <= 0) return;
+        double r = Round ? w / 2 : 2;
+        var rect = new Rect(0, 0, w, h);
+        if (!IsOn) { dc.DrawRoundedRectangle(Ink.Theme(this, "Ink400Brush", Ink.Muted), null, rect, r, r); return; }
+        for (int i = 3; i >= 1; i--)
+        {
+            var g = rect; g.Inflate(i * 1.5, i * 1.5);
+            dc.DrawRoundedRectangle(Ink.Alpha(Tone, 0.12), null, g, r + i * 1.5, r + i * 1.5);
+        }
+        dc.DrawRoundedRectangle(Tone, null, rect, r, r);
     }
 }

@@ -13,6 +13,14 @@ public static class Converters
     public static IValueConverter ZeroToVisibility { get; } = new Lambda(v => v is int n && n == 0);
     public static IValueConverter Not { get; } = new Negate();
     public static IValueConverter IsNotEmpty { get; } = new NonEmpty();
+    /// <summary>État du moteur pour le badge de la barre du haut.</summary>
+    public static IValueConverter LiveText { get; } = new Text(v => v is true ? "MOTEUR ACTIF" : "MICRO INACTIF");
+
+    private sealed class Text(Func<object?, string> text) : IValueConverter
+    {
+        public object Convert(object? value, Type targetType, object? parameter, CultureInfo culture) => text(value);
+        public object ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture) => throw new NotSupportedException();
+    }
 
     private sealed class Negate : IValueConverter
     {

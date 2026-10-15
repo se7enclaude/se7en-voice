@@ -44,7 +44,7 @@ public static class BuiltInPresets
     public static IReadOnlyList<Preset> All { get; } =
     [
         // ---------- Essentiels ----------
-        P(E, "Normal", "Ta vraie voix", '', "paper", new()),
+        P(E, "Normal", "Votre vraie voix", '', "paper", new()),
         P(E, "Streamer", "Voix pro et nette", '', "boost", new()
         {
             LowCutOn = true, LowCutHz = 90, DenoiseOn = true, DenoiseAmount = 0.5, CompressorOn = true, CompressorAmount = 0.6,
@@ -262,7 +262,7 @@ public static class BuiltInPresets
             HarmonyOn = true, HarmonySemitones = 7, HarmonyMix = 0.4, ChorusOn = true, ChorusDepth = 0.7, ChorusMix = 0.6,
             ReverbOn = true, ReverbSize = 0.8, ReverbMix = 0.3,
         }),
-        P(F, "Clone", "Toi en double", '', "surge", new()
+        P(F, "Clone", "Votre double", '', "surge", new()
         {
             ChorusOn = true, ChorusRate = 0.4, ChorusDepth = 0.9, ChorusMix = 0.8, EchoOn = true, EchoTimeMs = 60, EchoFeedback = 0.1, EchoMix = 0.3,
         }),

@@ -5,19 +5,19 @@ using Se7enVoice.Core.Dsp;
 namespace Se7enVoice.Controls;
 
 /// <summary>
-/// Analyseur de spectre temps réel de la voix envoyée au micro virtuel : barres arrondies
-/// (rampe de chaleur des vu-mètres) sur une échelle de fréquences logarithmique 60 Hz – 14 kHz.
+/// Analyseur temps réel de la voix envoyée au micro virtuel, façon écran HUD : grille de 1 px,
+/// courbe blanche du spectre et trace plus pâle des crêtes, sur une échelle logarithmique 60 Hz – 14 kHz.
 /// </summary>
 public sealed class SpectrumView : FrameworkElement
 {
-    private const int Size = 2048, Bars = 36;
+    private const int Size = 2048, Bars = 48;
     private const double MinHz = 60, MaxHz = 14000, FloorDb = -78, TopDb = -12;
 
-    // Dégradé violet → menthe des accents du design, crête en blanc
-    private static readonly Brush BarBrush = Freeze(new LinearGradientBrush(
-        [new GradientStop(Color.FromRgb(0x7A, 0x64, 0xF0), 0), new GradientStop(Color.FromRgb(0x96, 0x83, 0xFA), 0.45),
-         new GradientStop(Color.FromRgb(0x4F, 0xCD, 0xB8), 1)],
-        new Point(0, 1), new Point(0, 0)) { MappingMode = BrushMappingMode.RelativeToBoundingBox });
+    private static readonly Pen GridPen = Freeze(new Pen(new SolidColorBrush(Color.FromArgb(0x12, 0xFF, 0xFF, 0xFF)), 1));
+    private static readonly Pen AxisPen = Freeze(new Pen(new SolidColorBrush(Color.FromArgb(0x33, 0xFF, 0xFF, 0xFF)), 1));
+    private static readonly Pen LinePen = Freeze(new Pen(new SolidColorBrush(Color.FromArgb(0xEB, 0xFF, 0xFF, 0xFF)), 1.5) { LineJoin = PenLineJoin.Round });
+    private static readonly Pen PeakPen = Freeze(new Pen(new SolidColorBrush(Color.FromArgb(0x59, 0xFF, 0xFF, 0xFF)), 1.2) { LineJoin = PenLineJoin.Round });
+    private static readonly Brush AreaBrush = Freeze(new LinearGradientBrush(Color.FromArgb(0x24, 0xFF, 0xFF, 0xFF), Color.FromArgb(0, 0xFF, 0xFF, 0xFF), 90));
 
     private readonly Fft _fft = new(Size);
     private readonly double[] _re = new double[Size], _im = new double[Size], _window = new double[Size];
@@ -67,26 +67,40 @@ public sealed class SpectrumView : FrameworkElement
     {
         double w = ActualWidth, h = ActualHeight;
         if (w <= 0 || h <= 0) return;
-        double slot = w / Bars, bar = slot * 0.58, r = bar / 2;
-        var track = TryFindResource("MeterOffBrush") as Brush ?? Brushes.Transparent;
-        var cap = TryFindResource("TextPrimaryBrush") as Brush ?? Brushes.White;
-        // Le dégradé couvre toute la hauteur : on découpe chaque barre dedans.
         dc.PushClip(new RectangleGeometry(new Rect(0, 0, w, h)));
-        for (int b = 0; b < Bars; b++)
-        {
-            double x = b * slot + (slot - bar) / 2;
-            dc.DrawRoundedRectangle(track, null, new Rect(x, 0, bar, h), r, r);
-            double lh = _levels[b] * h;
-            if (lh > 1)
-            {
-                dc.PushClip(new RectangleGeometry(new Rect(x, h - lh, bar, lh), r, r));
-                dc.DrawRectangle(BarBrush, null, new Rect(x, 0, bar, h));
-                dc.Pop();
-            }
-            double py = h - _peaks[b] * h;
-            if (_peaks[b] > 0.02) dc.DrawRoundedRectangle(cap, null, new Rect(x, Math.Max(0, py - 3), bar, 2.5), 1, 1);
-        }
+        for (double y = 0.5; y < h; y += 15) dc.DrawLine(GridPen, new Point(0, y), new Point(w, y));
+        for (double x = 0.5; x < w; x += 24) dc.DrawLine(GridPen, new Point(x, 0), new Point(x, h));
+        dc.DrawLine(AxisPen, new Point(0, h - 0.5), new Point(w, h - 0.5));
+
+        double top = 30, span = h - top - 16;
+        var line = Curve(_levels, w, h, top, span, closed: false);
+        dc.DrawGeometry(AreaBrush, null, Curve(_levels, w, h, top, span, closed: true));
+        dc.DrawGeometry(null, PeakPen, Curve(_peaks, w, h, top, span, closed: false));
+        dc.DrawGeometry(null, LinePen, line);
         dc.Pop();
+    }
+
+    /// <summary>Courbe lissée (Catmull-Rom) passant par le niveau de chaque bande.</summary>
+    private static Geometry Curve(double[] v, double w, double h, double top, double span, bool closed)
+    {
+        var pts = new Point[v.Length];
+        for (int i = 0; i < v.Length; i++) pts[i] = new Point(i * w / (v.Length - 1), top + span - Math.Clamp(v[i], 0, 1) * span);
+        var g = new StreamGeometry();
+        using (var ctx = g.Open())
+        {
+            ctx.BeginFigure(closed ? new Point(0, top + span) : pts[0], closed, closed);
+            if (closed) ctx.LineTo(pts[0], false, false);
+            for (int i = 0; i < pts.Length - 1; i++)
+            {
+                var p0 = pts[Math.Max(0, i - 1)]; var p1 = pts[i]; var p2 = pts[i + 1]; var p3 = pts[Math.Min(pts.Length - 1, i + 2)];
+                var c1 = new Point(p1.X + (p2.X - p0.X) / 6, p1.Y + (p2.Y - p0.Y) / 6);
+                var c2 = new Point(p2.X - (p3.X - p1.X) / 6, p2.Y - (p3.Y - p1.Y) / 6);
+                ctx.BezierTo(c1, c2, p2, true, true);
+            }
+            if (closed) ctx.LineTo(new Point(w, top + span), false, false);
+        }
+        g.Freeze();
+        return g;
     }
 
     private static T Freeze<T>(T f) where T : Freezable { f.Freeze(); return f; }
