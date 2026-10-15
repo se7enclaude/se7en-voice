@@ -27,9 +27,8 @@
             <Setter Property="Margin" Value="6,2,0,8" />
             <Setter Property="HorizontalAlignment" Value="Left" />
         </Style>
-        <Style TargetType="c:Knob">
-            <Setter Property="Width" Value="76" />
-            <Setter Property="Margin" Value="0,0,4,0" />
+        <Style TargetType="c:ValueBar">
+            <Setter Property="Margin" Value="0,0,0,6" />
         </Style>
         <!-- Ligne de réglage : texte à gauche, interrupteur à droite -->
         <Style x:Key="SettingRow" TargetType="DockPanel">
@@ -344,19 +343,17 @@
                                                     <TextBlock Text="{Binding CurrentPresetName}" FontFamily="{StaticResource FontSemi}" FontSize="20" Foreground="{DynamicResource TextStrongBrush}" TextTrimming="CharacterEllipsis" />
                                                 </DockPanel>
                                                 <TextBlock Text="{Binding CurrentPresetTagline}" Style="{StaticResource CaptionText}" TextTrimming="CharacterEllipsis" Margin="0,2,0,12" />
-                                                <UniformGrid Columns="4" Margin="-6,0,-6,0">
+                                                <UniformGrid Columns="2" Margin="-4,0,-4,0">
                                                     <UniformGrid.Resources>
-                                                        <Style TargetType="c:Knob" BasedOn="{StaticResource {x:Type c:Knob}}">
-                                                            <Setter Property="Width" Value="76" />
-                                                            <Setter Property="Diameter" Value="46" />
-                                                            <Setter Property="HorizontalAlignment" Value="Center" />
+                                                        <Style TargetType="c:ValueBar" BasedOn="{StaticResource {x:Type c:ValueBar}}">
+                                                            <Setter Property="Margin" Value="4,0,4,4" />
                                                         </Style>
                                                     </UniformGrid.Resources>
-                                                    <c:Knob Label="Hauteur" Minimum="-12" Maximum="12" Origin="0" Tick="1" Value="{Binding PitchSemitones}" Format="{}{0:+0;-0;0} st" />
-                                                    <c:Knob Label="Formant" Minimum="-12" Maximum="12" Origin="0" Tick="0.5" Value="{Binding FormantSemitones}" Format="{}{0:+0.0;-0.0;0.0}"
+                                                    <c:ValueBar Label="Hauteur" Minimum="-12" Maximum="12" Origin="0" Tick="1" Value="{Binding PitchSemitones}" Format="{}{0:+0;-0;0} st" />
+                                                    <c:ValueBar Label="Formant" Minimum="-12" Maximum="12" Origin="0" Tick="0.5" Value="{Binding FormantSemitones}" Format="{}{0:+0.0;-0.0;0.0}"
                                                             ToolTip="Morphologie de la voix : homme ↔ femme, enfant, géant" />
-                                                    <c:Knob Label="Coffre" Value="{Binding Depth}" ToolTip="Voix plus grave et posée, en restant naturelle" />
-                                                    <c:Knob Label="Volume" Minimum="-12" Maximum="20" Origin="0" Value="{Binding VolumeDb}" Format="{}{0:+0.0;-0.0;0.0} dB" />
+                                                    <c:ValueBar Label="Coffre" Value="{Binding Depth}" ToolTip="Voix plus grave et posée, en restant naturelle" />
+                                                    <c:ValueBar Label="Volume" Minimum="-12" Maximum="20" Origin="0" Value="{Binding VolumeDb}" Format="{}{0:+0.0;-0.0;0.0} dB" />
                                                 </UniformGrid>
                                                 <DockPanel Margin="0,10,0,0">
                                                     <Button DockPanel.Dock="Left" Style="{StaticResource SmallGhostButton}" Content="Réinitialiser" Click="ResetEffects_Click" Margin="-10,0,0,0" />
@@ -689,19 +686,19 @@
                                     <c:AutoGrid>
                                         <HeaderedContentControl Style="{StaticResource Module}" Header="Anti-bruit" c:Ui.Subtitle="Coupe le micro entre vos phrases">
                                             <HeaderedContentControl.Tag><ToggleButton IsChecked="{Binding GateOn}" /></HeaderedContentControl.Tag>
-                                            <WrapPanel><c:Knob Label="Seuil" Minimum="-80" Maximum="-20" Tick="1" Value="{Binding GateThresholdDb}" Format="{}{0} dB" /></WrapPanel>
+                                            <StackPanel><c:ValueBar Label="Seuil" Minimum="-80" Maximum="-20" Tick="1" Value="{Binding GateThresholdDb}" Format="{}{0} dB" /></StackPanel>
                                         </HeaderedContentControl>
                                         <HeaderedContentControl Style="{StaticResource Module}" Header="Réduction de bruit IA" c:Ui.Subtitle="Efface le bruit de fond, même pendant la parole">
                                             <HeaderedContentControl.Tag><ToggleButton IsChecked="{Binding DenoiseOn}" /></HeaderedContentControl.Tag>
-                                            <WrapPanel><c:Knob Label="Intensité" Value="{Binding DenoiseAmount}" Tone="{DynamicResource CyanBrush}" /></WrapPanel>
+                                            <StackPanel><c:ValueBar Label="Intensité" Value="{Binding DenoiseAmount}" Tone="{DynamicResource CyanBrush}" /></StackPanel>
                                         </HeaderedContentControl>
                                         <HeaderedContentControl Style="{StaticResource Module}" Header="Coupe-bas" c:Ui.Subtitle="Vibrations, chocs sur le bureau, « pop »">
                                             <HeaderedContentControl.Tag><ToggleButton IsChecked="{Binding LowCutOn}" /></HeaderedContentControl.Tag>
-                                            <WrapPanel><c:Knob Label="Cutoff" Minimum="20" Maximum="300" Tick="1" Value="{Binding LowCutHz}" Format="{}{0} Hz" /></WrapPanel>
+                                            <StackPanel><c:ValueBar Label="Cutoff" Minimum="20" Maximum="300" Tick="1" Value="{Binding LowCutHz}" Format="{}{0} Hz" /></StackPanel>
                                         </HeaderedContentControl>
                                         <HeaderedContentControl Style="{StaticResource Module}" Header="De-esser" c:Ui.Subtitle="Adoucit les « sss » qui sifflent">
                                             <HeaderedContentControl.Tag><ToggleButton IsChecked="{Binding DeEsserOn}" /></HeaderedContentControl.Tag>
-                                            <WrapPanel><c:Knob Label="Force" Value="{Binding DeEsserAmount}" /></WrapPanel>
+                                            <StackPanel><c:ValueBar Label="Force" Value="{Binding DeEsserAmount}" /></StackPanel>
                                         </HeaderedContentControl>
                                     </c:AutoGrid>
                                 </StackPanel>
@@ -712,19 +709,19 @@
                                     <TextBlock c:Ui.Caps="Hauteur et timbre" Style="{StaticResource TrayLabel}" />
                                     <c:AutoGrid>
                                         <HeaderedContentControl Style="{StaticResource Module}" Header="Hauteur" c:Ui.Subtitle="La note de la voix, sans changer le débit">
-                                            <WrapPanel>
-                                                <c:Knob Label="Demi-tons" Minimum="-12" Maximum="12" Origin="0" Tick="1" Value="{Binding PitchSemitones}" Format="{}{0:+0;-0;0} st" />
-                                                <c:Knob Label="Coffre" Value="{Binding Depth}" />
-                                            </WrapPanel>
+                                            <StackPanel>
+                                                <c:ValueBar Label="Demi-tons" Minimum="-12" Maximum="12" Origin="0" Tick="1" Value="{Binding PitchSemitones}" Format="{}{0:+0;-0;0} st" />
+                                                <c:ValueBar Label="Coffre" Value="{Binding Depth}" />
+                                            </StackPanel>
                                         </HeaderedContentControl>
                                         <HeaderedContentControl Style="{StaticResource Module}" Header="Timbre" c:Ui.Subtitle="Allumé = timbre naturel (sans « chipmunk »)">
                                             <HeaderedContentControl.Tag><ToggleButton IsChecked="{Binding KeepFormants}" ToolTip="Timbre naturel" /></HeaderedContentControl.Tag>
-                                            <WrapPanel><c:Knob Label="Formant" Minimum="-12" Maximum="12" Origin="0" Tick="0.5" Value="{Binding FormantSemitones}" Format="{}{0:+0.0;-0.0;0.0}" /></WrapPanel>
+                                            <StackPanel><c:ValueBar Label="Formant" Minimum="-12" Maximum="12" Origin="0" Tick="0.5" Value="{Binding FormantSemitones}" Format="{}{0:+0.0;-0.0;0.0}" /></StackPanel>
                                         </HeaderedContentControl>
                                         <HeaderedContentControl Style="{StaticResource Module}" Header="Autotune" c:Ui.Subtitle="Vitesse au max = effet T-Pain">
                                             <HeaderedContentControl.Tag><ToggleButton IsChecked="{Binding AutotuneOn}" /></HeaderedContentControl.Tag>
                                             <DockPanel>
-                                                <c:Knob DockPanel.Dock="Left" Label="Vitesse" Value="{Binding AutotuneSpeed}" Margin="0,0,8,0" />
+                                                <c:ValueBar DockPanel.Dock="Left" Label="Vitesse" Value="{Binding AutotuneSpeed}" Width="170" Margin="0,0,10,0" />
                                                 <StackPanel VerticalAlignment="Top">
                                                     <ComboBox ItemsSource="{Binding KeyNames}" SelectedIndex="{Binding AutotuneKey}" Height="28" FontSize="12" Margin="0,0,0,6" ToolTip="Tonalité" />
                                                     <ComboBox ItemsSource="{Binding ScaleNames}" SelectedIndex="{Binding AutotuneScale}" Height="28" FontSize="12" ToolTip="Gamme" />
@@ -736,10 +733,10 @@
                                         </HeaderedContentControl>
                                         <HeaderedContentControl Style="{StaticResource Module}" Header="Harmoniseur" c:Ui.Subtitle="2ᵉ voix : -12 = monstre, +7 = chœur">
                                             <HeaderedContentControl.Tag><ToggleButton IsChecked="{Binding HarmonyOn}" /></HeaderedContentControl.Tag>
-                                            <WrapPanel>
-                                                <c:Knob Label="Intervalle" Minimum="-12" Maximum="12" Origin="0" Tick="1" Value="{Binding HarmonySemitones}" Format="{}{0:+0;-0;0} st" />
-                                                <c:Knob Label="Mix" Value="{Binding HarmonyMix}" />
-                                            </WrapPanel>
+                                            <StackPanel>
+                                                <c:ValueBar Label="Intervalle" Minimum="-12" Maximum="12" Origin="0" Tick="1" Value="{Binding HarmonySemitones}" Format="{}{0:+0;-0;0} st" />
+                                                <c:ValueBar Label="Mix" Value="{Binding HarmonyMix}" />
+                                            </StackPanel>
                                         </HeaderedContentControl>
                                     </c:AutoGrid>
                                 </StackPanel>
@@ -751,32 +748,32 @@
                                     <c:AutoGrid>
                                         <HeaderedContentControl Style="{StaticResource Module}" Header="Robot · alien" c:Ui.Subtitle="Fréquence basse = robot, haute = alien">
                                             <HeaderedContentControl.Tag><ToggleButton IsChecked="{Binding RobotOn}" /></HeaderedContentControl.Tag>
-                                            <WrapPanel>
-                                                <c:Knob Label="Fréquence" Minimum="20" Maximum="800" Tick="1" Value="{Binding RobotFrequency}" Format="{}{0} Hz" />
-                                                <c:Knob Label="Mix" Value="{Binding RobotMix}" />
-                                            </WrapPanel>
+                                            <StackPanel>
+                                                <c:ValueBar Label="Fréquence" Minimum="20" Maximum="800" Tick="1" Value="{Binding RobotFrequency}" Format="{}{0} Hz" />
+                                                <c:ValueBar Label="Mix" Value="{Binding RobotMix}" />
+                                            </StackPanel>
                                         </HeaderedContentControl>
                                         <HeaderedContentControl Style="{StaticResource Module}" Header="Chuchotement" c:Ui.Subtitle="La voix devient un souffle">
                                             <HeaderedContentControl.Tag><ToggleButton IsChecked="{Binding WhisperOn}" /></HeaderedContentControl.Tag>
-                                            <WrapPanel><c:Knob Label="Souffle" Value="{Binding WhisperAmount}" /></WrapPanel>
+                                            <StackPanel><c:ValueBar Label="Souffle" Value="{Binding WhisperAmount}" /></StackPanel>
                                         </HeaderedContentControl>
                                         <HeaderedContentControl Style="{StaticResource Module}" Header="Vibrato" c:Ui.Subtitle="Voix qui tremble (papy, fantôme)">
                                             <HeaderedContentControl.Tag><ToggleButton IsChecked="{Binding VibratoOn}" /></HeaderedContentControl.Tag>
-                                            <WrapPanel>
-                                                <c:Knob Label="Vitesse" Minimum="0.5" Maximum="12" Value="{Binding VibratoRate}" Format="{}{0:0.0} Hz" />
-                                                <c:Knob Label="Profondeur" Value="{Binding VibratoDepth}" />
-                                            </WrapPanel>
+                                            <StackPanel>
+                                                <c:ValueBar Label="Vitesse" Minimum="0.5" Maximum="12" Value="{Binding VibratoRate}" Format="{}{0:0.0} Hz" />
+                                                <c:ValueBar Label="Profondeur" Value="{Binding VibratoDepth}" />
+                                            </StackPanel>
                                         </HeaderedContentControl>
                                         <HeaderedContentControl Style="{StaticResource Module}" Header="Saturation" c:Ui.Subtitle="Voix saturée, démon ou mégaphone">
                                             <HeaderedContentControl.Tag><ToggleButton IsChecked="{Binding DistortionOn}" /></HeaderedContentControl.Tag>
-                                            <WrapPanel><c:Knob Label="Drive" Value="{Binding DistortionDrive}" /></WrapPanel>
+                                            <StackPanel><c:ValueBar Label="Drive" Value="{Binding DistortionDrive}" /></StackPanel>
                                         </HeaderedContentControl>
                                         <HeaderedContentControl Style="{StaticResource Module}" Header="Bitcrusher" c:Ui.Subtitle="Son de vieille console de jeu">
                                             <HeaderedContentControl.Tag><ToggleButton IsChecked="{Binding BitcrushOn}" /></HeaderedContentControl.Tag>
-                                            <WrapPanel>
-                                                <c:Knob Label="Bits" Minimum="2" Maximum="16" Tick="1" Value="{Binding BitcrushBits}" Format="{}{0} bits" />
-                                                <c:Knob Label="Échant." Minimum="1000" Maximum="24000" Value="{Binding BitcrushRateHz}" Format="{}{0:0} Hz" />
-                                            </WrapPanel>
+                                            <StackPanel>
+                                                <c:ValueBar Label="Bits" Minimum="2" Maximum="16" Tick="1" Value="{Binding BitcrushBits}" Format="{}{0} bits" />
+                                                <c:ValueBar Label="Échant." Minimum="1000" Maximum="24000" Value="{Binding BitcrushRateHz}" Format="{}{0:0} Hz" />
+                                            </StackPanel>
                                         </HeaderedContentControl>
                                         <HeaderedContentControl Style="{StaticResource Module}" Header="Radio · talkie" c:Ui.Subtitle="Talkie-walkie ou vieille radio">
                                             <HeaderedContentControl.Tag><ToggleButton IsChecked="{Binding RadioOn}" /></HeaderedContentControl.Tag>
@@ -792,34 +789,32 @@
                                     <c:AutoGrid>
                                         <HeaderedContentControl Style="{StaticResource Module}" Header="Égaliseur 5 bandes" c:Ui.Subtitle="Chaleur, clarté, présence">
                                             <HeaderedContentControl.Tag><ToggleButton IsChecked="{Binding EqOn}" /></HeaderedContentControl.Tag>
-                                            <WrapPanel>
-                                                <WrapPanel.Resources>
-                                                    <Style TargetType="c:Knob" BasedOn="{StaticResource {x:Type c:Knob}}">
-                                                        <Setter Property="Width" Value="50" />
-                                                        <Setter Property="Diameter" Value="30" />
+                                            <StackPanel>
+                                                <StackPanel.Resources>
+                                                    <Style TargetType="c:ValueBar" BasedOn="{StaticResource {x:Type c:ValueBar}}">
                                                         <Setter Property="Minimum" Value="-12" />
                                                         <Setter Property="Maximum" Value="12" />
                                                         <Setter Property="Origin" Value="0" />
                                                         <Setter Property="Format" Value="{}{0:+0;-0;0}" />
                                                     </Style>
-                                                </WrapPanel.Resources>
-                                                <c:Knob Label="Low" Value="{Binding EqLowDb}" ToolTip="Graves" />
-                                                <c:Knob Label="L-Mid" Value="{Binding EqLowMidDb}" ToolTip="Bas-médiums" />
-                                                <c:Knob Label="Mid" Value="{Binding EqMidDb}" ToolTip="Médiums" />
-                                                <c:Knob Label="Pres." Value="{Binding EqPresenceDb}" ToolTip="Présence" />
-                                                <c:Knob Label="High" Value="{Binding EqHighDb}" ToolTip="Aigus" />
-                                            </WrapPanel>
+                                                </StackPanel.Resources>
+                                                <c:ValueBar Label="Low" Value="{Binding EqLowDb}" ToolTip="Graves" />
+                                                <c:ValueBar Label="L-Mid" Value="{Binding EqLowMidDb}" ToolTip="Bas-médiums" />
+                                                <c:ValueBar Label="Mid" Value="{Binding EqMidDb}" ToolTip="Médiums" />
+                                                <c:ValueBar Label="Pres." Value="{Binding EqPresenceDb}" ToolTip="Présence" />
+                                                <c:ValueBar Label="High" Value="{Binding EqHighDb}" ToolTip="Aigus" />
+                                            </StackPanel>
                                         </HeaderedContentControl>
                                         <HeaderedContentControl Style="{StaticResource Module}" Header="Filtre" c:Ui.Subtitle="Téléphone, sous l'eau, derrière un mur">
                                             <HeaderedContentControl.Tag><ToggleButton IsChecked="{Binding FilterOn}" /></HeaderedContentControl.Tag>
-                                            <WrapPanel>
-                                                <c:Knob Label="Coupe sous" Minimum="20" Maximum="2000" Tick="10" Value="{Binding FilterLowHz}" Format="{}{0} Hz" />
-                                                <c:Knob Label="Coupe dessus" Minimum="300" Maximum="16000" Tick="10" Value="{Binding FilterHighHz}" Format="{}{0} Hz" />
-                                            </WrapPanel>
+                                            <StackPanel>
+                                                <c:ValueBar Label="Coupe sous" Minimum="20" Maximum="2000" Tick="10" Value="{Binding FilterLowHz}" Format="{}{0} Hz" />
+                                                <c:ValueBar Label="Coupe dessus" Minimum="300" Maximum="16000" Tick="10" Value="{Binding FilterHighHz}" Format="{}{0} Hz" />
+                                            </StackPanel>
                                         </HeaderedContentControl>
                                         <HeaderedContentControl Style="{StaticResource Module}" Header="Compresseur" c:Ui.Subtitle="Volume régulier, voix « radio »">
                                             <HeaderedContentControl.Tag><ToggleButton IsChecked="{Binding CompressorOn}" /></HeaderedContentControl.Tag>
-                                            <WrapPanel><c:Knob Label="Intensité" Value="{Binding CompressorAmount}" /></WrapPanel>
+                                            <StackPanel><c:ValueBar Label="Intensité" Value="{Binding CompressorAmount}" /></StackPanel>
                                         </HeaderedContentControl>
                                     </c:AutoGrid>
                                 </StackPanel>
@@ -831,26 +826,26 @@
                                     <c:AutoGrid>
                                         <HeaderedContentControl Style="{StaticResource Module}" Header="Chorus" c:Ui.Subtitle="Plusieurs voix à la fois, son plus large">
                                             <HeaderedContentControl.Tag><ToggleButton IsChecked="{Binding ChorusOn}" /></HeaderedContentControl.Tag>
-                                            <WrapPanel>
-                                                <c:Knob Label="Vitesse" Minimum="0.05" Maximum="5" Value="{Binding ChorusRate}" Format="{}{0:0.00} Hz" />
-                                                <c:Knob Label="Profondeur" Value="{Binding ChorusDepth}" />
-                                                <c:Knob Label="Mix" Value="{Binding ChorusMix}" />
-                                            </WrapPanel>
+                                            <StackPanel>
+                                                <c:ValueBar Label="Vitesse" Minimum="0.05" Maximum="5" Value="{Binding ChorusRate}" Format="{}{0:0.00} Hz" />
+                                                <c:ValueBar Label="Profondeur" Value="{Binding ChorusDepth}" />
+                                                <c:ValueBar Label="Mix" Value="{Binding ChorusMix}" />
+                                            </StackPanel>
                                         </HeaderedContentControl>
                                         <HeaderedContentControl Style="{StaticResource Module}" Header="Écho" c:Ui.Subtitle="La voix se répète… se répète…">
                                             <HeaderedContentControl.Tag><ToggleButton IsChecked="{Binding EchoOn}" /></HeaderedContentControl.Tag>
-                                            <WrapPanel>
-                                                <c:Knob Label="Délai" Minimum="40" Maximum="1000" Tick="1" Value="{Binding EchoTimeMs}" Format="{}{0} ms" />
-                                                <c:Knob Label="Retour" Maximum="0.9" Value="{Binding EchoFeedback}" />
-                                                <c:Knob Label="Mix" Value="{Binding EchoMix}" />
-                                            </WrapPanel>
+                                            <StackPanel>
+                                                <c:ValueBar Label="Délai" Minimum="40" Maximum="1000" Tick="1" Value="{Binding EchoTimeMs}" Format="{}{0} ms" />
+                                                <c:ValueBar Label="Retour" Maximum="0.9" Value="{Binding EchoFeedback}" />
+                                                <c:ValueBar Label="Mix" Value="{Binding EchoMix}" />
+                                            </StackPanel>
                                         </HeaderedContentControl>
                                         <HeaderedContentControl Style="{StaticResource Module}" Header="Réverb" c:Ui.Subtitle="Comme dans une grande salle">
                                             <HeaderedContentControl.Tag><ToggleButton IsChecked="{Binding ReverbOn}" /></HeaderedContentControl.Tag>
-                                            <WrapPanel>
-                                                <c:Knob Label="Taille" Value="{Binding ReverbSize}" />
-                                                <c:Knob Label="Mix" Value="{Binding ReverbMix}" />
-                                            </WrapPanel>
+                                            <StackPanel>
+                                                <c:ValueBar Label="Taille" Value="{Binding ReverbSize}" />
+                                                <c:ValueBar Label="Mix" Value="{Binding ReverbMix}" />
+                                            </StackPanel>
                                         </HeaderedContentControl>
                                     </c:AutoGrid>
                                 </StackPanel>
