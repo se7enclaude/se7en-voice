@@ -14,9 +14,14 @@ public static class KeyWatcher
 
     public static bool IsDown(int vk) => vk > 0 && (GetAsyncKeyState(vk) & 0x8000) != 0;
 
+    /// <summary>La touche du push-to-talk est tenue (Ctrl gauche ne compte pas quand c'est Alt Gr qui l'envoie).</summary>
+    public static bool IsHeld(int vk) => IsDown(vk) && !(vk == 0xA2 && IsDown(0xA5));
+
     /// <summary>Première touche enfoncée (hors clic gauche, qui sert à cliquer sur le bouton), ou null.</summary>
     public static int? FirstPressed()
     {
+        // Alt Gr envoie aussi un faux « Ctrl gauche » : sans ça, il serait pris pour Ctrl gauche
+        if (IsDown(0xA5)) return 0xA5;
         for (int vk = 0x02; vk < 0xFF; vk++)
         {
             if (vk is 0x10 or 0x11 or 0x12) continue; // Shift/Ctrl/Alt génériques : on garde les versions gauche/droite

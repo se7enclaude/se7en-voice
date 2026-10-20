@@ -665,7 +665,7 @@ public sealed class MainViewModel : Observable, IDisposable
             else if (_keyCaptureTicks > 600) { CapturingKey = false; UpdateKeyTimer(); }
             return;
         }
-        if (_settings.PushToTalkOn) Engine.TalkOpen = KeyWatcher.IsDown(_settings.PushToTalkKey);
+        if (_settings.PushToTalkOn) Engine.TalkOpen = KeyWatcher.IsHeld(_settings.PushToTalkKey);
     }
 
     /// <summary>La fenêtre affiche la table de mixage (vu-mètres à rafraîchir).</summary>
