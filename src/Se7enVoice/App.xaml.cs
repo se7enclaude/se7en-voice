@@ -45,10 +45,25 @@ public partial class App : Application
         }
 
         base.OnStartup(e);
-        var window = new MainWindow(startMinimized: e.Args.Contains("--minimized"));
-        MainWindow = window;
+        bool minimized = e.Args.Contains("--minimized");
+        if (minimized)
+        {
+            StartMain(true);
+            return;
+        }
+        // Animation de lancement, puis la fenêtre principale (pas d'animation au démarrage avec Windows).
+        var splash = new LaunchSplash();
+        splash.Done += (_, _) => StartMain(false);
+        splash.Show();
+    }
 
-        var signal = _showSignal;
+    private void StartMain(bool minimized)
+    {
+        var window = new MainWindow(startMinimized: minimized);
+        MainWindow = window;
+        if (!minimized) window.Activate();
+
+        var signal = _showSignal!;
         new Thread(() =>
         {
             while (signal.WaitOne())
