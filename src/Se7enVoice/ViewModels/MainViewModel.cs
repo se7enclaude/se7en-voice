@@ -10,7 +10,7 @@ using Se7enVoice.Services;
 
 namespace Se7enVoice.ViewModels;
 
-public sealed class MainViewModel : Observable, IDisposable
+public sealed partial class MainViewModel : Observable, IDisposable
 {
     private readonly AppSettings _settings;
     private readonly PresetStore _store = new(Path.Combine(AppSettings.Folder, "presets"));
@@ -41,6 +41,7 @@ public sealed class MainViewModel : Observable, IDisposable
         foreach (var p in _store.LoadAll()) UserPresets.Add(new PresetItem(p));
         foreach (var p in AllPresets) p.IsFavorite = _settings.Favorites.Contains(p.Name);
         Mixer = new MixerViewModel(_settings, Engine, MarkDirty, msg => Notify?.Invoke(msg));
+        UpdateAiParams(); // voix IA choisie (mise en évidence avant même le démarrage)
         RefreshPresetView();
         _current = AllPresets.FirstOrDefault(p => p.Name == _settings.CurrentPreset);
         if (_current != null)
@@ -212,7 +213,9 @@ public sealed class MainViewModel : Observable, IDisposable
         try
         {
             var cable = Devices.Get(Devices.CableInput()?.Id);
+            StopAi(); // la voix IA est liée à la fréquence du micro : on la recrée après
             Engine.Start(mic, cable, MonitorOn ? MonitorDevice() : null);
+            _ = ApplyAiAsync();
             Mixer.RestartMicApps();
             Raise(nameof(LatencyText)); Raise(nameof(RateText));
             Live = true;
@@ -240,6 +243,7 @@ public sealed class MainViewModel : Observable, IDisposable
 
     private void UpdateMeters()
     {
+        TickAi();
         var (i, o, a) = Engine.TakeLevels();
         InputLevel = Smooth(InputLevel, ToMeter(i));
         OutputLevel = Smooth(OutputLevel, Muted ? 0 : ToMeter(o));
@@ -350,7 +354,27 @@ public sealed class MainViewModel : Observable, IDisposable
             VolumeDb = Voice.VolumeDb, GateOn = Voice.GateOn, GateThresholdDb = Voice.GateThresholdDb,
             // Le débruitage IA suit le micro, sauf si la voix l'allume elle-même.
             DenoiseOn = preset.DenoiseOn || Voice.DenoiseOn, DenoiseAmount = preset.DenoiseOn ? preset.DenoiseAmount : Voice.DenoiseAmount,
+            // Le coupe-bas de l'assistant micro aussi (la voix peut couper plus haut).
+            LowCutOn = preset.LowCutOn || _settings.MicLowCutOn,
+            LowCutHz = preset.LowCutOn && _settings.MicLowCutOn ? Math.Max(preset.LowCutHz, _settings.MicLowCutHz)
+                     : preset.LowCutOn ? preset.LowCutHz : _settings.MicLowCutOn ? _settings.MicLowCutHz : preset.LowCutHz,
         };
+
+    /// <summary>Réglages proposés par l'assistant micro (ou remis par « Annuler »).</summary>
+    public void ApplyMicSettings(VoiceSettings value, bool lowCutFromAssistant)
+    {
+        _settings.MicLowCutOn = lowCutFromAssistant;
+        if (lowCutFromAssistant) _settings.MicLowCutHz = value.LowCutHz;
+        SetVoice(value, fromPreset: true);
+        Modified = DiffersFromPreset(value);
+    }
+
+    public NAudio.CoreAudioApi.MMDevice? MicrophoneDevice() => Devices.Get(_selectedMicrophone?.Id);
+
+    public void Toast(string message) => Notify?.Invoke(message);
+
+    public MicAssistant MicAssistant => _micAssistant ??= new MicAssistant(this, Engine);
+    private MicAssistant? _micAssistant;
 
     private bool DiffersFromPreset(VoiceSettings v) =>
         _current != null && KeepMicSettings(_current.Preset.Settings) != v;
@@ -930,6 +954,7 @@ public sealed class MainViewModel : Observable, IDisposable
         Engine.StopRecording();
         Mixer.Dispose();
         _settings.Save();
+        DisposeAi();
         Engine.Dispose();
         Devices.Dispose();
     }

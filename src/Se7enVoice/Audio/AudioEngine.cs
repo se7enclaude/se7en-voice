@@ -25,6 +25,8 @@ public sealed class AudioEngine : IDisposable
     private volatile ProcessLoopbackCapture[] _apps = [];
     private float[] _appTmp = [];
     private volatile Recorder? _recorder;
+    private volatile Action<float[], int>? _rawTap;
+    private volatile Ai.AiVoice? _ai;
     private readonly float[] _scope = new float[4096];
     private int _scopePos;
 
@@ -59,10 +61,16 @@ public sealed class AudioEngine : IDisposable
     public float AppsGain { get => _appsGain; set => _appsGain = value; }
 
     /// <summary>Retard total estimé micro → micro virtuel, en ms.</summary>
-    public double LatencyMs => 10 + 20 + (_chain?.LatencyMs ?? 0);
+    public double LatencyMs => 10 + 20 + (_ai?.LatencyMs ?? _chain?.LatencyMs ?? 0);
 
     /// <summary>Note chantée détectée par l'autotune (Hz), 0 sinon.</summary>
     public double DetectedFrequency => _chain?.DetectedFrequency ?? 0;
+
+    /// <summary>Voix IA en service (null = effets classiques). Doit avoir été créée à la fréquence du micro (<see cref="SampleRate"/>).</summary>
+    public Ai.AiVoice? Ai { get => _ai; set => _ai = value; }
+
+    /// <summary>Reçoit le micro brut (mono, avant les effets), sur le thread audio : l'assistant micro l'écoute.</summary>
+    public Action<float[], int>? RawTap { get => _rawTap; set => _rawTap = value; }
 
     public bool IsRecording => _recorder != null;
     public Recorder? CurrentRecording => _recorder;
@@ -205,8 +213,18 @@ public sealed class AudioEngine : IDisposable
         int frames = ToMono(e.Buffer, e.BytesRecorded, capture.WaveFormat, ref _mono);
         var voice = _mono.AsSpan(0, frames);
         StorePeak(ref _inPeak, voice);
+        _rawTap?.Invoke(_mono, frames);
 
-        if (!_bypass) chain.Process(voice);
+        var ai = _ai;
+        if (_bypass) { }
+        else if (ai != null)
+        {
+            chain.ProcessInput(voice);   // micro nettoyé…
+            ai.Push(voice);
+            ai.Pull(voice);              // …remplacé par la voix IA (avec un petit retard)
+            chain.ProcessOutput(voice);
+        }
+        else chain.Process(voice);
 
         // Muet / push-to-talk : fondu de 5 ms pour éviter les clics.
         float target = _muted || !_talkOpen ? 0 : 1;

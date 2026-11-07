@@ -6,6 +6,12 @@ Centrale audio tout-en-un pour streamers, gamers et créateurs, au design **Cent
 - **Effets pro** : débruitage spectral, coupe-bas, de-esser, hauteur, formants (timbre), autotune, harmoniseur, robot, chuchotement, vibrato, distorsion, 8-bit, radio, filtre, égaliseur 5 bandes, compresseur, chorus, écho, réverb, limiteur.
 - **Table de mixage** (façon Voicemeeter, sans pilote) : une tranche par type d'appli (jeux, musique, discussion, navigateur, système) avec fader, muet et vu-mètre ; ducking automatique ; envoi du son d'une appli dans le micro virtuel (Windows 11).
 - **Soundboard** avec raccourcis globaux.
+- **Voix IA** (RVC) : vraie conversion de voix en direct sur la carte graphique (ONNX Runtime + DirectML, toute marque),
+  12 voix choisies parmi les 109 du corpus VCTK (CC BY 4.0) apprises par le modèle de base de RVC (MIT), hauteur
+  automatique. Modèles (≈ 485 Mo) téléchargés au premier usage depuis la release `voix-ia-1`, vérifiés par SHA-256.
+  Retard ≈ 0,25 s (blocs de 100 ms, fenêtre de 1 s, raccord SOLA).
+- **Assistant micro** : 3 s de silence + 7 s de parole → volume Windows du micro, volume, anti-bruit, réduction de
+  bruit et coupe-bas réglés tout seuls.
 - **Seven Microphone** : le micro virtuel s'installe depuis l'appli (pilote gratuit VB-CABLE téléchargé sur le site officiel de VB-Audio, signature vérifiée, puis renommé).
 
 Vrai micro → effets en temps réel → VB-CABLE, que Discord, les jeux et Windows utilisent comme micro.

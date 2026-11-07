@@ -18,6 +18,16 @@ public sealed class AppSettings
     public string? MonitorDeviceId { get; set; }
     public bool MonitorOn { get; set; }
     public VoiceSettings Voice { get; set; } = new();
+    /// <summary>Coupe-bas réglé par l'assistant micro : il dépend du micro, il reste quand on change de voix.</summary>
+    public bool MicLowCutOn { get; set; }
+
+    // Voix IA
+    public bool AiVoiceOn { get; set; }
+    public string AiVoiceId { get; set; } = "vctk-30";
+    /// <summary>Hauteur automatique (la voix de l'utilisateur est amenée à celle de la voix IA).</summary>
+    public bool AiPitchAuto { get; set; } = true;
+    public double AiPitchSemitones { get; set; }
+    public double MicLowCutHz { get; set; } = 90;
     public string CurrentPreset { get; set; } = "Normal";
     public bool MinimizeToTray { get; set; } = true;
     /// <summary>Affiche les réglages avancés (page Effets, analyseur, lectures techniques).</summary>

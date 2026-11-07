@@ -271,6 +271,22 @@ public partial class MainWindow : Window
 
     private void CancelSave_Click(object sender, RoutedEventArgs e) => SaveDialog.Visibility = Visibility.Collapsed;
 
+    // ---------- Voix IA ----------
+
+    private async void AiDownload_Click(object sender, RoutedEventArgs e) => await _vm.DownloadAiAsync();
+    private void AiCancel_Click(object sender, RoutedEventArgs e) => _vm.CancelAiDownload();
+    private void AiVoice_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is FrameworkElement { Tag: AiVoiceItem item }) _vm.SelectAiVoice(item);
+    }
+
+    // ---------- Assistant micro ----------
+
+    private void MicAssistant_Click(object sender, RoutedEventArgs e) => _vm.MicAssistant.Open();
+    private void MicStart_Click(object sender, RoutedEventArgs e) => _vm.MicAssistant.Start();
+    private void MicClose_Click(object sender, RoutedEventArgs e) => _vm.MicAssistant.Close();
+    private void MicUndo_Click(object sender, RoutedEventArgs e) => _vm.MicAssistant.Undo();
+
     private void PresetNameBox_KeyDown(object sender, KeyEventArgs e)
     {
         if (e.Key == Key.Enter) ConfirmSave_Click(sender, e);

@@ -437,6 +437,68 @@
                                     </StackPanel>
                                 </Border>
 
+                                <!-- Voix IA -->
+                                <HeaderedContentControl Style="{StaticResource Card}" Header="Voix IA" c:Ui.Subtitle="Une vraie nouvelle voix, sur votre carte graphique" Margin="0,0,0,10">
+                                    <HeaderedContentControl.Tag>
+                                        <Border Style="{StaticResource InfoBadge}" Visibility="{Binding AiOn, Converter={StaticResource BoolToVis}}">
+                                            <StackPanel Orientation="Horizontal">
+                                                <Ellipse Style="{StaticResource BadgeDot}" />
+                                                <TextBlock c:Ui.Caps="Active" Style="{StaticResource BadgeText}" />
+                                            </StackPanel>
+                                        </Border>
+                                    </HeaderedContentControl.Tag>
+                                    <StackPanel>
+                                        <!-- premier usage : téléchargement -->
+                                        <StackPanel Visibility="{Binding AiReady, Converter={x:Static vm:Converters.InverseBoolToVisibility}}">
+                                            <TextBlock Style="{StaticResource BodyText}" Margin="0,0,0,12">
+                                                <Run Text="L'intelligence artificielle transforme votre voix en une autre, bien plus crédible que les effets. Gratuit, sans Internet une fois installé ; téléchargement unique de" />
+                                                <Run Text="{Binding AiSizeText, Mode=OneWay}" /><Run Text="." />
+                                            </TextBlock>
+                                            <Button Style="{StaticResource SmallPrimaryButton}" c:Ui.Icon="&#xE896;" Content="Télécharger et activer" HorizontalAlignment="Left"
+                                                    Click="AiDownload_Click" Visibility="{Binding AiDownloading, Converter={x:Static vm:Converters.InverseBoolToVisibility}}" />
+                                            <StackPanel Visibility="{Binding AiDownloading, Converter={StaticResource BoolToVis}}">
+                                                <ProgressBar Height="3" Minimum="0" Maximum="1" Value="{Binding AiProgress, Mode=OneWay}"
+                                                             Foreground="{DynamicResource BoneBrush}" Background="{DynamicResource WellBrush}" BorderThickness="0" />
+                                                <Button Style="{StaticResource SmallGhostButton}" Content="Annuler" HorizontalAlignment="Left" Margin="0,8,0,0" Click="AiCancel_Click" />
+                                            </StackPanel>
+                                        </StackPanel>
+
+                                        <!-- installée : interrupteur, voix, hauteur -->
+                                        <StackPanel Visibility="{Binding AiReady, Converter={StaticResource BoolToVis}}">
+                                            <DockPanel Style="{StaticResource SettingRow}">
+                                                <ToggleButton DockPanel.Dock="Left" Style="{StaticResource Switch}" IsChecked="{Binding AiOn}" Margin="0,0,10,0" />
+                                                <TextBlock Text="Activer la voix IA" Style="{StaticResource StrongText}" />
+                                            </DockPanel>
+                                            <ItemsControl ItemsSource="{Binding AiVoices}" Margin="0,4,0,6">
+                                                <ItemsControl.ItemsPanel>
+                                                    <ItemsPanelTemplate><UniformGrid Columns="3" /></ItemsPanelTemplate>
+                                                </ItemsControl.ItemsPanel>
+                                                <ItemsControl.ItemTemplate>
+                                                    <DataTemplate>
+                                                        <RadioButton Style="{StaticResource AiChip}" GroupName="AiVoice" IsChecked="{Binding IsSelected, Mode=OneWay}"
+                                                                     Click="AiVoice_Click" Tag="{Binding}" ToolTip="{Binding Description}">
+                                                            <StackPanel>
+                                                                <TextBlock Text="{Binding Name}" FontFamily="{StaticResource FontSemi}" FontSize="13" />
+                                                                <TextBlock Text="{Binding Description}" FontSize="10.5" Opacity="0.7" TextTrimming="CharacterEllipsis" />
+                                                            </StackPanel>
+                                                        </RadioButton>
+                                                    </DataTemplate>
+                                                </ItemsControl.ItemTemplate>
+                                            </ItemsControl>
+                                            <DockPanel Style="{StaticResource SettingRow}">
+                                                <ToggleButton DockPanel.Dock="Right" Style="{StaticResource Switch}" IsChecked="{Binding AiPitchAuto}" />
+                                                <TextBlock Text="Hauteur automatique" Style="{StaticResource StrongText}"
+                                                           ToolTip="Amène votre voix à la hauteur de la voix choisie (homme vers femme, et inversement)" />
+                                            </DockPanel>
+                                            <c:ValueBar Label="Hauteur" Minimum="-12" Maximum="12" Tick="1" Value="{Binding AiSemitones}" Format="{}{0:+0;-0;0} demi-tons"
+                                                        Visibility="{Binding AiPitchAuto, Converter={x:Static vm:Converters.InverseBoolToVisibility}}" Margin="0,0,0,8" />
+                                        </StackPanel>
+                                        <TextBlock Text="{Binding AiStatus}" Style="{StaticResource MetaText}" FontSize="11.5" TextWrapping="Wrap" Margin="0,4,0,0"
+                                                   Visibility="{Binding AiStatus, Converter={x:Static vm:Converters.NotEmptyToVisibility}}" />
+                                        <TextBlock Text="{Binding AiCredits}" Style="{StaticResource MetaText}" FontSize="10.5" TextWrapping="Wrap" Margin="0,6,0,0" Opacity="0.7" />
+                                    </StackPanel>
+                                </HeaderedContentControl>
+
                                 <!-- Réduction de bruit IA -->
                                 <HeaderedContentControl Style="{StaticResource Card}" Header="Réduction de bruit IA" Margin="0,10,0,0">
                                     <HeaderedContentControl.Tag>
@@ -473,6 +535,8 @@
                                             <ToggleButton DockPanel.Dock="Right" Style="{StaticResource Switch}" IsChecked="{Binding KeepFormants}" />
                                             <TextBlock Text="Timbre naturel" Style="{StaticResource StrongText}" ToolTip="Change la hauteur sans effet « chipmunk »" />
                                         </DockPanel>
+                                        <Button Style="{StaticResource SmallSecondaryButton}" c:Ui.Icon="&#xE720;" Content="Assistant micro" HorizontalAlignment="Left"
+                                                Margin="0,12,0,0" Click="MicAssistant_Click" ToolTip="Règle tout seul le volume, l'anti-bruit et la réduction de bruit (10 s)" />
                                     </StackPanel>
                                 </HeaderedContentControl>
                             </StackPanel>
@@ -1156,7 +1220,9 @@
                                 <HeaderedContentControl Style="{StaticResource Card}" Header="Périphériques" Margin="0,10,0,0">
                                     <StackPanel>
                                         <TextBlock c:Ui.Caps="Micro" Style="{StaticResource MicroText}" Margin="0,0,0,6" />
-                                        <ComboBox ItemsSource="{Binding Microphones}" SelectedValue="{Binding SelectedMicrophone}" Margin="0,0,0,14" />
+                                        <ComboBox ItemsSource="{Binding Microphones}" SelectedValue="{Binding SelectedMicrophone}" Margin="0,0,0,8" />
+                                        <Button Style="{StaticResource SmallSecondaryButton}" c:Ui.Icon="&#xE720;" Content="Assistant micro" HorizontalAlignment="Left"
+                                                Margin="0,0,0,14" Click="MicAssistant_Click" ToolTip="Règle tout seul le volume, l'anti-bruit et la réduction de bruit (10 s)" />
                                         <TextBlock c:Ui.Caps="Casque (A1)" Style="{StaticResource MicroText}" Margin="0,0,0,6" />
                                         <ComboBox ItemsSource="{Binding Speakers}" SelectedValue="{Binding SelectedMonitor}" />
                                         <WrapPanel Margin="0,14,0,0">
@@ -1335,6 +1401,55 @@
                     <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,20,0,0">
                         <Button Style="{StaticResource GhostButton}" Content="Annuler" Click="CancelSave_Click" />
                         <Button Style="{StaticResource PrimaryButton}" Content="Enregistrer" Click="ConfirmSave_Click" Margin="0" />
+                    </StackPanel>
+                </StackPanel>
+            </c:HudFrame>
+        </Grid>
+
+        <!-- ===== Assistant micro ===== -->
+        <Grid x:Name="MicDialog" Background="{DynamicResource ScrimBrush}" DataContext="{Binding MicAssistant}"
+              Visibility="{Binding IsOpen, Converter={StaticResource BoolToVis}}">
+            <c:HudFrame Width="520" VerticalAlignment="Center" HorizontalAlignment="Center" Chamfer="18" Fill="{DynamicResource Ink50Brush}" Stroke="{DynamicResource HudLineBrush}"
+                        Padding="22,18,22,20">
+                <StackPanel>
+                    <TextBlock Text="{Binding Title}" Style="{StaticResource TitleText}" FontSize="13" Margin="0,0,0,14" />
+                    <Grid Height="1" Margin="0,0,0,16">
+                        <Border Background="{DynamicResource BorderBrush}" />
+                        <Border Background="{DynamicResource HudLineBrush}" Width="40" HorizontalAlignment="Left" />
+                    </Grid>
+                    <TextBlock Text="{Binding Text}" Style="{StaticResource BodyText}" />
+
+                    <!-- enregistrement : phrase à lire, niveau du micro, avancement -->
+                    <StackPanel Visibility="{Binding IsRecording, Converter={StaticResource BoolToVis}}" Margin="0,14,0,0">
+                        <TextBlock Text="{Binding Sentence}" Style="{StaticResource StrongText}" TextWrapping="Wrap" FontSize="16" LineHeight="24" Margin="0,0,0,14"
+                                   Visibility="{Binding IsSpeech, Converter={StaticResource BoolToVis}}" />
+                        <c:LevelMeter Height="6" Value="{Binding DataContext.InputLevel, ElementName=PageVoice}" Segments="42" />
+                        <ProgressBar Height="3" Margin="0,10,0,0" Minimum="0" Maximum="1" Value="{Binding Progress, Mode=OneWay}"
+                                     Foreground="{DynamicResource BoneBrush}" Background="{DynamicResource WellBrush}" BorderThickness="0" />
+                    </StackPanel>
+
+                    <!-- résultat -->
+                    <ItemsControl ItemsSource="{Binding Notes}" Margin="0,12,0,0" Visibility="{Binding IsResult, Converter={StaticResource BoolToVis}}">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <DockPanel Margin="0,0,0,8">
+                                    <TextBlock DockPanel.Dock="Left" Text="&#xE73E;" FontFamily="{StaticResource FontIcons}" FontSize="12" Margin="0,3,10,0"
+                                               Foreground="{DynamicResource TextPrimaryBrush}" />
+                                    <TextBlock Text="{Binding}" Style="{StaticResource BodyText}" />
+                                </DockPanel>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+
+                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,20,0,0">
+                        <Button Style="{StaticResource GhostButton}" Content="Annuler les changements" Click="MicUndo_Click"
+                                Visibility="{Binding Done, Converter={StaticResource BoolToVis}}" />
+                        <Button Style="{StaticResource GhostButton}" Content="Fermer" Click="MicClose_Click"
+                                Visibility="{Binding IsRecording, Converter={x:Static vm:Converters.InverseBoolToVisibility}}" />
+                        <Button Style="{StaticResource PrimaryButton}" c:Ui.Icon="&#xE720;" Content="Lancer" Click="MicStart_Click" Margin="0"
+                                Visibility="{Binding IsIntro, Converter={StaticResource BoolToVis}}" />
+                        <Button Style="{StaticResource PrimaryButton}" c:Ui.Icon="&#xE72C;" Content="Recommencer" Click="MicStart_Click" Margin="0"
+                                Visibility="{Binding Failed, Converter={StaticResource BoolToVis}}" />
                     </StackPanel>
                 </StackPanel>
             </c:HudFrame>

@@ -107,6 +107,26 @@ public sealed class EffectChain
             if (effect.Enabled) effect.Process(buffer);
     }
 
+    /// <summary>Voix IA : nettoyage seul (anti-bruit, coupe-bas, réduction de bruit), avant la conversion.</summary>
+    public void ProcessInput(Span<float> buffer)
+    {
+        var s = _settings;
+        if (!ReferenceEquals(s, _applied)) Apply(s);
+        for (int i = 0; i < 3; i++)
+            if (_order[i].Enabled) _order[i].Process(buffer);
+    }
+
+    /// <summary>Voix IA : le reste de la chaîne (couleur, dynamique, espace), après la conversion. La hauteur, le timbre
+    /// et l'autotune sont laissés de côté : la voix IA s'en charge.</summary>
+    public void ProcessOutput(Span<float> buffer)
+    {
+        for (int i = 3; i < _order.Length; i++)
+        {
+            var e = _order[i];
+            if (e.Enabled && e != _pitch && e != _timbre && e != _deepener) e.Process(buffer);
+        }
+    }
+
     public void Reset()
     {
         foreach (var effect in _order) effect.Reset();

@@ -442,6 +442,37 @@
         </Setter>
     </Style>
 
+    <!-- ===== Voix IA : carte de voix (sélectionnée = inversée, comme les onglets) ===== -->
+    <Style x:Key="AiChip" TargetType="RadioButton">
+        <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}" />
+        <Setter Property="FontFamily" Value="{StaticResource FontSans}" />
+        <Setter Property="Margin" Value="0,0,6,6" />
+        <Setter Property="Cursor" Value="Hand" />
+        <Setter Property="Focusable" Value="False" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="RadioButton">
+                    <Border x:Name="b" Background="{DynamicResource RaisedBrush}" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1"
+                            CornerRadius="8" Padding="9,7">
+                        <ContentPresenter />
+                    </Border>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter TargetName="b" Property="Background" Value="{DynamicResource HoverBrush}" />
+                            <Setter TargetName="b" Property="BorderBrush" Value="{DynamicResource BorderStrongBrush}" />
+                        </Trigger>
+                        <Trigger Property="IsChecked" Value="True">
+                            <Setter TargetName="b" Property="Background" Value="{DynamicResource InverseBrush}" />
+                            <Setter TargetName="b" Property="BorderBrush" Value="{DynamicResource BoneBrush}" />
+                            <Setter TargetName="b" Property="Effect" Value="{DynamicResource SelectedGlow}" />
+                            <Setter Property="Foreground" Value="{DynamicResource TextInverseBrush}" />
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
     <!-- ===== Interrupteur (pilule) : bone + halo quand il est allumé ===== -->
     <Style x:Key="Switch" TargetType="ToggleButton">
         <Setter Property="Cursor" Value="Hand" />
