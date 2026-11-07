@@ -10,6 +10,10 @@ Centrale audio tout-en-un pour streamers, gamers et créateurs, au design **Cent
   12 voix choisies parmi les 109 du corpus VCTK (CC BY 4.0) apprises par le modèle de base de RVC (MIT), hauteur
   automatique. Modèles (≈ 485 Mo) téléchargés au premier usage depuis la release `voix-ia-1`, vérifiés par SHA-256.
   Retard ≈ 0,25 s (blocs de 100 ms, fenêtre de 1 s, raccord SOLA).
+- **Importer une voix** : votre voix ou celle d'un ami d'accord (modèle RVC v2 `.pth`, 32/40/48 kHz). Le fichier est lu
+  par un lecteur sûr (aucun code exécuté, seules les structures de PyTorch connues sont acceptées), les poids sont
+  convertis (normalisation repliée) puis écrits dans une copie du générateur ONNX de sa fréquence. Accord de la
+  personne obligatoire à l'import ; clic droit pour supprimer.
 - **Assistant micro** : 3 s de silence + 7 s de parole → volume Windows du micro, volume, anti-bruit, réduction de
   bruit et coupe-bas réglés tout seuls.
 - **Seven Microphone** : le micro virtuel s'installe depuis l'appli (pilote gratuit VB-CABLE téléchargé sur le site officiel de VB-Audio, signature vérifiée, puis renommé).

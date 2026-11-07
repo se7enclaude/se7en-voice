@@ -26,6 +26,28 @@ public static class AiModels
         (Generator, 115303880, "a0f3f3948fb77313989a9ea3ad4e47211b7656f0ee7b3b143ed971b4cd3e891f"),
     ];
 
+    /// <summary>Squelettes des voix importées à 40 et 32 kHz (le 48 kHz est le générateur des voix VCTK) : téléchargés
+    /// seulement à l'import d'une voix de cette fréquence.</summary>
+    public static readonly (string Name, long Size, string Sha256)[] Skeletons =
+    [
+        ("rvc_vctk40k.onnx", 110584968, "33acc0f5b327f7e63d3d97d0d29c578e74e67dd88c6e01df10f9ca9d52260e72"),
+        ("rvc_vctk32k.onnx", 112665416, "1da4e7cfff2fc07512719828fdf07c97ed13481fc029f37caba11f80135d0052"),
+    ];
+
+    public static string SkeletonFor(int rate) => rate switch
+    {
+        48000 => Generator,
+        40000 => Skeletons[0].Name,
+        32000 => Skeletons[1].Name,
+        _ => throw new ArgumentOutOfRangeException(nameof(rate)),
+    };
+
+    public static bool SkeletonReady(int rate) => rate == 48000 ? Ready : IsComplete(Skeletons[rate == 40000 ? 0 : 1]);
+
+    /// <summary>Télécharge le squelette d'une fréquence (≈ 110 Mo) s'il manque.</summary>
+    public static Task DownloadSkeletonAsync(int rate, IProgress<double> progress, CancellationToken cancel) =>
+        rate == 48000 ? DownloadAsync(progress, cancel) : DownloadFilesAsync([Skeletons[rate == 40000 ? 0 : 1]], progress, cancel);
+
     public static long TotalSize => Files.Sum(f => f.Size);
 
     public static string Folder { get; } =
@@ -35,13 +57,16 @@ public static class AiModels
     public static bool Ready => Files.All(f => new FileInfo(Path.Combine(Folder, f.Name)) is { Exists: true } fi && fi.Length == f.Size);
 
     /// <summary>Télécharge ce qui manque. <paramref name="progress"/> reçoit 0..1. Lève une exception en cas d'échec.</summary>
-    public static async Task DownloadAsync(IProgress<double> progress, CancellationToken cancel)
+    public static Task DownloadAsync(IProgress<double> progress, CancellationToken cancel) => DownloadFilesAsync(Files, progress, cancel);
+
+    private static async Task DownloadFilesAsync((string Name, long Size, string Sha256)[] files, IProgress<double> progress, CancellationToken cancel)
     {
         Directory.CreateDirectory(Folder);
+        long total = files.Sum(f => f.Size);
         using var http = new HttpClient { Timeout = TimeSpan.FromMinutes(30) };
         http.DefaultRequestHeaders.UserAgent.ParseAdd("se7en-Voice");
-        long done = Files.Where(f => IsComplete(f)).Sum(f => f.Size);
-        foreach (var f in Files)
+        long done = files.Where(f => IsComplete(f)).Sum(f => f.Size);
+        foreach (var f in files)
         {
             if (IsComplete(f)) continue;
             string path = Path.Combine(Folder, f.Name), tmp = path + ".part";
@@ -56,7 +81,7 @@ public static class AiModels
                 {
                     await dst.WriteAsync(buf.AsMemory(0, n), cancel);
                     done += n;
-                    progress.Report((double)done / TotalSize);
+                    progress.Report((double)done / total);
                 }
             }
             string hash;

@@ -27,6 +27,8 @@ public sealed class AppSettings
     /// <summary>Hauteur automatique (la voix de l'utilisateur est amenée à celle de la voix IA).</summary>
     public bool AiPitchAuto { get; set; } = true;
     public double AiPitchSemitones { get; set; }
+    /// <summary>Voix importées (fichiers .pth de l'utilisateur et de ses amis, avec leur accord).</summary>
+    public List<Ai.CustomAiVoice> AiCustomVoices { get; set; } = [];
     public double MicLowCutHz { get; set; } = 90;
     public string CurrentPreset { get; set; } = "Normal";
     public bool MinimizeToTray { get; set; } = true;

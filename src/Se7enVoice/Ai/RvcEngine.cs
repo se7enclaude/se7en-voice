@@ -7,13 +7,16 @@ namespace Se7enVoice.Ai;
 
 /// <summary>
 /// Les trois réseaux de la voix IA (RVC), en ONNX sur la carte graphique (DirectML, toute marque) ou à défaut le
-/// processeur : ContentVec (ce qui est dit), RMVPE (la hauteur) et le générateur (la nouvelle voix, 48 kHz).
+/// processeur : ContentVec (ce qui est dit), RMVPE (la hauteur) et le générateur (la nouvelle voix : les voix VCTK à
+/// 48 kHz, ou une voix importée à 32, 40 ou 48 kHz, voir <see cref="RvcGenerator"/>).
 /// Une fenêtre fixe de 1 s à 16 kHz donne 1 s de voix convertie (le générateur attend exactement 100 trames).
 /// </summary>
 public sealed class RvcEngine : IDisposable
 {
-    public const int Window = 16000, Frames = 100, OutRate = 48000;
-    private readonly InferenceSession _vec, _rmvpe, _gen;
+    public const int Window = 16000, Frames = 100;
+    private readonly InferenceSession _vec, _rmvpe;
+    private readonly object _genLock = new();
+    private RvcGenerator _gen;
     private readonly MelSpectrogram _mel = new();
     private readonly float[] _melBuf = new float[MelSpectrogram.Mels * 128];
     private readonly float[] _f0 = new float[Frames];
@@ -22,17 +25,37 @@ public sealed class RvcEngine : IDisposable
     private readonly float[] _rnd = new float[192 * Frames];
     private readonly Random _rng = new(7);
 
-    private RvcEngine(InferenceSession vec, InferenceSession rmvpe, InferenceSession gen, string device)
+    private RvcEngine(InferenceSession vec, InferenceSession rmvpe, RvcGenerator gen, bool gpu)
     {
         _vec = vec;
         _rmvpe = rmvpe;
         _gen = gen;
-        Device = device;
+        OnGpu = gpu;
     }
 
     /// <summary>« Carte graphique » ou « Processeur ».</summary>
-    public string Device { get; }
-    public bool OnGpu => Device != "Processeur";
+    public string Device => OnGpu ? "Carte graphique" : "Processeur";
+    public bool OnGpu { get; }
+    /// <summary>Fréquence de la voix produite (32, 40 ou 48 kHz selon le générateur).</summary>
+    public int OutRate => _gen.Rate;
+    /// <summary>Voix chargée : null = voix VCTK fournies, sinon le fichier importé.</summary>
+    public string? GeneratorFile => _gen.File;
+
+    /// <summary>Charge le générateur d'une voix (lent : 1 à 3 s) sans toucher à celui en service.</summary>
+    public RvcGenerator OpenGenerator(AiVoiceInfo voice)
+    {
+        var g = RvcGenerator.Open(voice, OnGpu);
+        Run(g, new float[Window], 0); // chauffe
+        return g;
+    }
+
+    /// <summary>Met en service <paramref name="g"/> (l'ancien est libéré).</summary>
+    public void UseGenerator(RvcGenerator g)
+    {
+        RvcGenerator old;
+        lock (_genLock) { old = _gen; _gen = g; }
+        if (!ReferenceEquals(old, g)) old.Dispose();
+    }
 
     /// <summary>Hauteur de la dernière fenêtre (Hz, 0 = pas de voix), pour la hauteur automatique.</summary>
     public ReadOnlySpan<float> LastF0 => _f0;
@@ -51,32 +74,39 @@ public sealed class RvcEngine : IDisposable
 
     private static RvcEngine Create(string folder, bool gpu)
     {
-        InferenceSession Open(string file)
-        {
-            var o = new SessionOptions
-            {
-                GraphOptimizationLevel = GraphOptimizationLevel.ORT_ENABLE_ALL,
-                LogSeverityLevel = OrtLoggingLevel.ORT_LOGGING_LEVEL_ERROR,
-            };
-            if (gpu)
-            {
-                o.EnableMemoryPattern = false; // exigé par DirectML
-                o.ExecutionMode = ExecutionMode.ORT_SEQUENTIAL;
-                o.AppendExecutionProvider_DML(0);
-            }
-            else
-            {
-                o.IntraOpNumThreads = Math.Max(2, Environment.ProcessorCount / 2);
-            }
-            return new InferenceSession(Path.Combine(folder, file), o);
-        }
-        var engine = new RvcEngine(Open(AiModels.ContentVec), Open(AiModels.Rmvpe), Open(AiModels.Generator), gpu ? "Carte graphique" : "Processeur");
+        InferenceSession Open(string file) => new(Path.Combine(folder, file), Options(gpu));
+        var engine = new RvcEngine(Open(AiModels.ContentVec), Open(AiModels.Rmvpe), RvcGenerator.Open(AiVoices.All[0], gpu), gpu);
         engine.Convert(new float[Window], 0, 0); // chauffe : la première passe compile les noyaux
         return engine;
     }
 
-    /// <summary>Convertit la fenêtre de 1 s (16 kHz) avec la voix <paramref name="sid"/> décalée de <paramref name="semitones"/>. Renvoie 1 s à 48 kHz.</summary>
+    internal static SessionOptions Options(bool gpu)
+    {
+        var o = new SessionOptions
+        {
+            GraphOptimizationLevel = GraphOptimizationLevel.ORT_ENABLE_ALL,
+            LogSeverityLevel = OrtLoggingLevel.ORT_LOGGING_LEVEL_ERROR,
+        };
+        if (gpu)
+        {
+            o.EnableMemoryPattern = false; // exigé par DirectML
+            o.ExecutionMode = ExecutionMode.ORT_SEQUENTIAL;
+            o.AppendExecutionProvider_DML(0);
+        }
+        else
+        {
+            o.IntraOpNumThreads = Math.Max(2, Environment.ProcessorCount / 2);
+        }
+        return o;
+    }
+
+    /// <summary>Convertit la fenêtre de 1 s (16 kHz) avec la voix <paramref name="sid"/> décalée de <paramref name="semitones"/>. Renvoie 1 s à <see cref="OutRate"/>.</summary>
     public float[] Convert(float[] window16k, int sid, double semitones)
+    {
+        lock (_genLock) return Run(_gen, window16k, sid, semitones);
+    }
+
+    private float[] Run(RvcGenerator gen, float[] window16k, int sid, double semitones = 0)
     {
         // 1) ce qui est dit : 50 trames/s de 768, doublées à 100 trames/s
         using (var vecOut = _vec.Run([NamedOnnxValue.CreateFromTensor("source", new DenseTensor<float>(window16k, [1, Window]))]))
@@ -123,7 +153,7 @@ public sealed class RvcEngine : IDisposable
             NamedOnnxValue.CreateFromTensor("sid", new DenseTensor<long>(new long[] { sid }, [1])),
             NamedOnnxValue.CreateFromTensor("rnd", new DenseTensor<float>(_rnd, [1, 192, Frames])),
         };
-        using var gOut = _gen.Run(inputs);
+        using var gOut = gen.Session.Run(inputs);
         return gOut.First().AsTensor<float>().ToArray();
     }
 
@@ -131,6 +161,6 @@ public sealed class RvcEngine : IDisposable
     {
         _vec.Dispose();
         _rmvpe.Dispose();
-        _gen.Dispose();
+        lock (_genLock) _gen.Dispose();
     }
 }

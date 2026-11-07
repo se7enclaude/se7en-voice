@@ -41,6 +41,7 @@ public sealed partial class MainViewModel : Observable, IDisposable
         foreach (var p in _store.LoadAll()) UserPresets.Add(new PresetItem(p));
         foreach (var p in AllPresets) p.IsFavorite = _settings.Favorites.Contains(p.Name);
         Mixer = new MixerViewModel(_settings, Engine, MarkDirty, msg => Notify?.Invoke(msg));
+        foreach (var c in _settings.AiCustomVoices) AiVoices.Add(new AiVoiceItem(c.ToInfo()));
         UpdateAiParams(); // voix IA choisie (mise en évidence avant même le démarrage)
         RefreshPresetView();
         _current = AllPresets.FirstOrDefault(p => p.Name == _settings.CurrentPreset);

@@ -1,4 +1,5 @@
 using System.Collections.ObjectModel;
+using System.IO;
 using Se7enVoice.Ai;
 using Se7enVoice.Core.Ai;
 
@@ -11,6 +12,7 @@ public sealed class AiVoiceItem(AiVoiceInfo info) : Observable
     public AiVoiceInfo Info { get; } = info;
     public string Name => Info.Name;
     public string Description => Info.Description;
+    public bool IsCustom => Info.IsCustom;
     public bool IsSelected { get => _isSelected; set => Set(ref _isSelected, value); }
 }
 
@@ -19,7 +21,7 @@ public sealed partial class MainViewModel
 {
     private RvcEngine? _rvc;
     private AiVoice? _ai;
-    private bool _aiBusy, _aiDownloading;
+    private bool _aiBusy, _aiAgain, _aiDownloading;
     private double _aiProgress;
     private string _aiStatus = "";
     private int _aiStatusTick;
@@ -78,7 +80,48 @@ public sealed partial class MainViewModel
         MarkDirty();
         UpdateAiParams();
         if (!AiOn) AiOn = true;
+        else _ = ApplyAiAsync(); // une voix importée a son propre générateur
     }
+
+    public VoiceImport VoiceImport => _voiceImport ??= new VoiceImport(this);
+    private VoiceImport? _voiceImport;
+
+    /// <summary>Fin de l'import : la voix rejoint la liste et devient la voix choisie.</summary>
+    public void AddCustomVoice(CustomAiVoice voice)
+    {
+        _settings.AiCustomVoices.Add(voice);
+        var item = new AiVoiceItem(voice.ToInfo());
+        AiVoices.Add(item);
+        SelectAiVoice(item);
+        Notify?.Invoke($"Voix « {voice.Name} » importée · elle est maintenant active");
+    }
+
+    public void DeleteCustomVoice(AiVoiceItem item)
+    {
+        if (!item.IsCustom) return;
+        _settings.AiCustomVoices.RemoveAll(c => c.Id == item.Info.Id);
+        AiVoices.Remove(item);
+        bool wasSelected = _settings.AiVoiceId == item.Info.Id;
+        if (wasSelected) _settings.AiVoiceId = Core.Ai.AiVoices.All[0].Id;
+        MarkDirty();
+        UpdateAiParams();
+        _ = DeleteVoiceFileAsync(item.Info.File!, wasSelected);
+        Notify?.Invoke($"Voix « {item.Name} » supprimée");
+    }
+
+    private async Task DeleteVoiceFileAsync(string file, bool wasSelected)
+    {
+        if (wasSelected) await ApplyAiAsync(); // libère d'abord le fichier en service
+        for (int i = 0; i < 10; i++)
+        {
+            try { if (System.IO.File.Exists(file)) System.IO.File.Delete(file); return; }
+            catch (IOException) { await Task.Delay(500); }
+            catch (UnauthorizedAccessException) { await Task.Delay(500); }
+        }
+    }
+
+    private AiVoiceInfo CurrentAiVoice =>
+        AiVoices.FirstOrDefault(v => v.Info.Id == _settings.AiVoiceId)?.Info ?? Core.Ai.AiVoices.All[0];
 
     /// <summary>Premier usage : télécharge les modèles puis allume la voix IA.</summary>
     public async Task DownloadAiAsync()
@@ -113,10 +156,13 @@ public sealed partial class MainViewModel
     /// <summary>Met la voix IA en route (ou l'arrête) selon le réglage, à la fréquence actuelle du micro.</summary>
     private async Task ApplyAiAsync()
     {
-        if (_aiBusy) return;
+        if (_aiBusy) { _aiAgain = true; return; }
         _aiBusy = true;
         try
         {
+          do
+          {
+            _aiAgain = false;
             if (!AiOn || !Engine.IsRunning || !AiModels.Ready)
             {
                 StopAi();
@@ -128,6 +174,28 @@ public sealed partial class MainViewModel
                 AiStatus = "Chargement sur la carte graphique…";
                 _rvc = await Task.Run(() => RvcEngine.Load(AiModels.Folder));
             }
+            // générateur de la voix choisie : voix fournies, ou voix importée (son propre fichier)
+            var voice = CurrentAiVoice;
+            if (_rvc.GeneratorFile != voice.File)
+            {
+                AiStatus = voice.IsCustom ? $"Chargement de « {voice.Name} »…" : "Chargement des voix…";
+                var rvc = _rvc;
+                RvcGenerator g;
+                try { g = await Task.Run(() => rvc.OpenGenerator(voice)); }
+                catch (Exception ex) when (voice.IsCustom)
+                {
+                    // voix importée illisible : on revient aux voix fournies
+                    _settings.AiVoiceId = Core.Ai.AiVoices.All[0].Id;
+                    MarkDirty();
+                    UpdateAiParams();
+                    Notify?.Invoke($"La voix « {voice.Name} » n'a pas pu être chargée : {ex.Message}");
+                    _aiAgain = true;
+                    continue;
+                }
+                bool sameRate = g.Rate == rvc.OutRate;
+                if (!sameRate) StopAi(); // la sortie change de fréquence : on recrée la conversion
+                rvc.UseGenerator(g);
+            }
             if (_ai == null || Engine.Ai == null)
             {
                 StopAi();
@@ -135,6 +203,7 @@ public sealed partial class MainViewModel
                 UpdateAiParams();
                 Engine.Ai = _ai;
             }
+          } while (_aiAgain && AiOn && Engine.IsRunning);
         }
         catch (Exception ex)
         {
@@ -159,7 +228,7 @@ public sealed partial class MainViewModel
 
     private void UpdateAiParams()
     {
-        var info = Core.Ai.AiVoices.Find(_settings.AiVoiceId) ?? Core.Ai.AiVoices.All[0];
+        var info = CurrentAiVoice;
         foreach (var v in AiVoices) v.IsSelected = v.Info.Id == info.Id;
         if (_ai == null) return;
         _ai.Sid = info.Sid;

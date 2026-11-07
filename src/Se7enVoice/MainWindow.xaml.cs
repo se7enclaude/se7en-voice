@@ -282,6 +282,22 @@ public partial class MainWindow : Window
 
     // ---------- Assistant micro ----------
 
+    private async void AiImport_Click(object sender, RoutedEventArgs e)
+    {
+        var dlg = new OpenFileDialog { Filter = "Voix RVC v2 (*.pth)|*.pth", Title = "Importer une voix (votre voix, ou celle d'un ami d'accord)" };
+        if (dlg.ShowDialog(this) == true) await _vm.VoiceImport.OpenAsync(dlg.FileName);
+    }
+
+    private void AiDeleteVoice_Click(object sender, RoutedEventArgs e)
+    {
+        if ((sender as FrameworkElement)?.Tag is not AiVoiceItem item) return;
+        if (MessageBox.Show(this, $"Supprimer la voix « {item.Name} » ?", "se7en Voice", MessageBoxButton.YesNo, MessageBoxImage.Question) == MessageBoxResult.Yes)
+            _vm.DeleteCustomVoice(item);
+    }
+
+    private async void ImportConfirm_Click(object sender, RoutedEventArgs e) => await _vm.VoiceImport.ImportAsync();
+    private void ImportClose_Click(object sender, RoutedEventArgs e) => _vm.VoiceImport.Close();
+
     private void MicAssistant_Click(object sender, RoutedEventArgs e) => _vm.MicAssistant.Open();
     private void MicStart_Click(object sender, RoutedEventArgs e) => _vm.MicAssistant.Start();
     private void MicClose_Click(object sender, RoutedEventArgs e) => _vm.MicAssistant.Close();
@@ -340,6 +356,13 @@ public partial class MainWindow : Window
     private void OnDrop(object sender, DragEventArgs e)
     {
         if (e.Data.GetData(DataFormats.FileDrop) is not string[] files) return;
+        if (files.FirstOrDefault(f => f.EndsWith(".pth", StringComparison.OrdinalIgnoreCase)) is { } pth)
+        {
+            if (_vm.AiReady) _ = _vm.VoiceImport.OpenAsync(pth);
+            else ShowToast("Téléchargez d'abord la voix IA (page Voix), puis importez votre voix.");
+            files = files.Where(f => !f.EndsWith(".pth", StringComparison.OrdinalIgnoreCase)).ToArray();
+            if (files.Length == 0) return;
+        }
         var presets = files.Where(f => f.EndsWith(".json", StringComparison.OrdinalIgnoreCase)).ToList();
         int imported = presets.Count(_vm.ImportPreset);
         if (imported > 0) ShowToast($"{imported} voix importée(s)");

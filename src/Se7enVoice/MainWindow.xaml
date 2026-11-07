@@ -476,7 +476,13 @@
                                                 <ItemsControl.ItemTemplate>
                                                     <DataTemplate>
                                                         <RadioButton Style="{StaticResource AiChip}" GroupName="AiVoice" IsChecked="{Binding IsSelected, Mode=OneWay}"
-                                                                     Click="AiVoice_Click" Tag="{Binding}" ToolTip="{Binding Description}">
+                                                                     Click="AiVoice_Click" Tag="{Binding}" ToolTip="{Binding Description}"
+                                                                     ContextMenuService.IsEnabled="{Binding IsCustom}">
+                                                            <RadioButton.ContextMenu>
+                                                                <ContextMenu>
+                                                                    <MenuItem Header="Supprimer cette voix" Click="AiDeleteVoice_Click" Tag="{Binding}" />
+                                                                </ContextMenu>
+                                                            </RadioButton.ContextMenu>
                                                             <StackPanel>
                                                                 <TextBlock Text="{Binding Name}" FontFamily="{StaticResource FontSemi}" FontSize="13" />
                                                                 <TextBlock Text="{Binding Description}" FontSize="10.5" Opacity="0.7" TextTrimming="CharacterEllipsis" />
@@ -485,6 +491,9 @@
                                                     </DataTemplate>
                                                 </ItemsControl.ItemTemplate>
                                             </ItemsControl>
+                                            <Button Style="{StaticResource SmallGhostButton}" c:Ui.Icon="&#xE8B5;" Content="Importer une voix (.pth)" HorizontalAlignment="Left"
+                                                    Margin="0,0,0,8" Click="AiImport_Click"
+                                                    ToolTip="Ajoutez votre propre voix, ou celle d'un ami qui est d'accord (modèle RVC v2). Clic droit sur une voix importée pour la supprimer." />
                                             <DockPanel Style="{StaticResource SettingRow}">
                                                 <ToggleButton DockPanel.Dock="Right" Style="{StaticResource Switch}" IsChecked="{Binding AiPitchAuto}" />
                                                 <TextBlock Text="Hauteur automatique" Style="{StaticResource StrongText}"
@@ -1450,6 +1459,62 @@
                                 Visibility="{Binding IsIntro, Converter={StaticResource BoolToVis}}" />
                         <Button Style="{StaticResource PrimaryButton}" c:Ui.Icon="&#xE72C;" Content="Recommencer" Click="MicStart_Click" Margin="0"
                                 Visibility="{Binding Failed, Converter={StaticResource BoolToVis}}" />
+                    </StackPanel>
+                </StackPanel>
+            </c:HudFrame>
+        </Grid>
+        <!-- ===== Importer une voix ===== -->
+        <Grid x:Name="ImportDialog" Background="{DynamicResource ScrimBrush}" DataContext="{Binding VoiceImport}"
+              Visibility="{Binding IsOpen, Converter={StaticResource BoolToVis}}">
+            <c:HudFrame Width="520" VerticalAlignment="Center" HorizontalAlignment="Center" Chamfer="18" Fill="{DynamicResource Ink50Brush}" Stroke="{DynamicResource HudLineBrush}"
+                        Padding="22,18,22,20">
+                <StackPanel>
+                    <TextBlock Text="IMPORTER UNE VOIX" Style="{StaticResource TitleText}" FontSize="13" Margin="0,0,0,14" />
+                    <Grid Height="1" Margin="0,0,0,16">
+                        <Border Background="{DynamicResource BorderBrush}" />
+                        <Border Background="{DynamicResource HudLineBrush}" Width="40" HorizontalAlignment="Left" />
+                    </Grid>
+                    <TextBlock Style="{StaticResource StrongText}" Text="{Binding FileName}" TextTrimming="CharacterEllipsis" />
+                    <TextBlock Style="{StaticResource MetaText}" Text="{Binding Info}" Margin="0,2,0,0"
+                               Visibility="{Binding Info, Converter={x:Static vm:Converters.NotEmptyToVisibility}}" />
+
+                    <StackPanel Visibility="{Binding HasModel, Converter={StaticResource BoolToVis}}" Margin="0,14,0,0">
+                        <TextBlock Text="Nom de la voix" Style="{StaticResource MetaText}" Margin="0,0,0,6" />
+                        <TextBox Text="{Binding Name, UpdateSourceTrigger=PropertyChanged}" MaxLength="24" />
+                        <TextBlock Text="Type de voix (pour la hauteur automatique)" Style="{StaticResource MetaText}" Margin="0,14,0,6" />
+                        <UniformGrid Columns="2">
+                            <RadioButton Style="{StaticResource AiChip}" GroupName="ImportTone" IsChecked="{Binding IsLow}">
+                                <StackPanel>
+                                    <TextBlock Text="Grave" FontFamily="{StaticResource FontSemi}" FontSize="13" />
+                                    <TextBlock Text="Voix d'homme, en général" FontSize="10.5" Opacity="0.7" />
+                                </StackPanel>
+                            </RadioButton>
+                            <RadioButton Style="{StaticResource AiChip}" GroupName="ImportTone" IsChecked="{Binding IsHigh}">
+                                <StackPanel>
+                                    <TextBlock Text="Aiguë" FontFamily="{StaticResource FontSemi}" FontSize="13" />
+                                    <TextBlock Text="Voix de femme ou d'enfant" FontSize="10.5" Opacity="0.7" TextTrimming="CharacterEllipsis" />
+                                </StackPanel>
+                            </RadioButton>
+                        </UniformGrid>
+                        <DockPanel Style="{StaticResource SettingRow}" Margin="0,12,0,0">
+                            <ToggleButton DockPanel.Dock="Left" Style="{StaticResource Switch}" IsChecked="{Binding Consent}" Margin="0,0,12,0" VerticalAlignment="Top" />
+                            <TextBlock Style="{StaticResource BodyText}" TextWrapping="Wrap"
+                                       Text="Cette voix est la mienne, ou la personne dont c'est la voix m'a donné son accord. Je ne l'utiliserai pas pour me faire passer pour quelqu'un." />
+                        </DockPanel>
+                    </StackPanel>
+
+                    <StackPanel Visibility="{Binding Busy, Converter={StaticResource BoolToVis}}" Margin="0,14,0,0">
+                        <TextBlock Text="{Binding Status}" Style="{StaticResource MetaText}" Margin="0,0,0,6" />
+                        <ProgressBar Height="3" Minimum="0" Maximum="1" Value="{Binding Progress, Mode=OneWay}"
+                                     Foreground="{DynamicResource BoneBrush}" Background="{DynamicResource WellBrush}" BorderThickness="0" />
+                    </StackPanel>
+                    <TextBlock Text="{Binding Error}" Style="{StaticResource BodyText}" TextWrapping="Wrap" Margin="0,14,0,0"
+                               Visibility="{Binding Error, Converter={x:Static vm:Converters.NotEmptyToVisibility}}" />
+
+                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,20,0,0">
+                        <Button Style="{StaticResource GhostButton}" Content="Annuler" Click="ImportClose_Click" />
+                        <Button Style="{StaticResource PrimaryButton}" c:Ui.Icon="&#xE8B5;" Content="Importer" Click="ImportConfirm_Click" Margin="0"
+                                IsEnabled="{Binding CanImport}" Visibility="{Binding HasModel, Converter={StaticResource BoolToVis}}" />
                     </StackPanel>
                 </StackPanel>
             </c:HudFrame>

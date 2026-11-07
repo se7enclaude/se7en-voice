@@ -12,7 +12,8 @@ namespace Se7enVoice.Ai;
 public sealed class AiVoice : IDisposable
 {
     public const int BlockMs = 100, MarginMs = 40, FadeMs = 30, SearchMs = 10;
-    private const int Block16 = 16 * BlockMs, Block48 = 48 * BlockMs, Margin48 = 48 * MarginMs;
+    private const int Block16 = 16 * BlockMs;
+    private readonly int _blockOutLen, _marginOut; // en échantillons de la voix produite (32, 40 ou 48 kHz)
 
     private readonly RvcEngine _engine;
     private readonly StreamResampler _toModel;            // micro → 16 kHz
@@ -21,8 +22,8 @@ public sealed class AiVoice : IDisposable
     private readonly object _inLock = new();
     private readonly AutoResetEvent _wake = new(false);
     private readonly float[] _window = new float[RvcEngine.Window];
-    private readonly SolaStitcher _sola = new(Block48, 48 * FadeMs, 48 * SearchMs);
-    private readonly float[] _blockOut = new float[Block48];
+    private readonly SolaStitcher _sola;
+    private readonly float[] _blockOut;
     private readonly ResamplingRing _out;                  // 48 kHz → fréquence du micro, avec tampon et dérive
     private readonly VoiceRange _range = new();
     private readonly Thread _thread;
@@ -34,7 +35,13 @@ public sealed class AiVoice : IDisposable
         _engine = engine;
         _toModel = new StreamResampler(engineRate, 16000);
         // tampon de sortie : un bloc arrive toutes les 100 ms, il faut de quoi tenir jusqu'au suivant (+ marge)
-        _out = new ResamplingRing(RvcEngine.OutRate, engineRate, targetLatencyMs: BlockMs + 25);
+        int k = engine.OutRate / 1000;
+        _blockOutLen = k * BlockMs;
+        _marginOut = k * MarginMs;
+        _sola = new SolaStitcher(_blockOutLen, k * FadeMs, k * SearchMs);
+        _blockOut = new float[_blockOutLen];
+        OutRate = engine.OutRate;
+        _out = new ResamplingRing(engine.OutRate, engineRate, targetLatencyMs: BlockMs + 25);
         _thread = new Thread(Loop) { IsBackground = true, Name = "voix-ia", Priority = ThreadPriority.AboveNormal };
         _thread.Start();
     }
@@ -52,6 +59,8 @@ public sealed class AiVoice : IDisposable
     public double ComputeMs { get; private set; }
     public double LatencyMs => BlockMs + MarginMs + ComputeMs + (BlockMs + 25) / 2.0;
     public string Device => _engine.Device;
+    /// <summary>Fréquence de la voix produite au moment de la création (si le générateur change de fréquence, il faut recréer).</summary>
+    public int OutRate { get; }
     public bool TooSlow => ComputeMs > BlockMs * 0.9;
 
     /// <summary>Thread audio : voix du micro (mono, fréquence du micro).</summary>
@@ -99,7 +108,7 @@ public sealed class AiVoice : IDisposable
                 _range.Add(_engine.LastF0[^(Block16 / 160)..]); // trames du dernier bloc (voix de l'utilisateur, avant décalage)
                 ComputeMs = watch.Elapsed.TotalMilliseconds;
 
-                int end = audio.Length - Margin48;
+                int end = audio.Length - _marginOut;
                 _sola.Process(audio.AsSpan(end - _sola.Needed, _sola.Needed), _blockOut);
                 _out.Write(_blockOut);
             }
