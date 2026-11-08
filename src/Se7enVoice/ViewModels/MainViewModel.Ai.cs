@@ -144,6 +144,7 @@ public sealed partial class MainViewModel
         {
             await AiModels.DownloadAsync(new Progress<double>(p => AiProgress = p), _aiCancel.Token);
             Raise(nameof(AiReady));
+            RefreshComponentTexts();
             AiOn = true;
         }
         catch (OperationCanceledException)

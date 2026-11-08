@@ -410,6 +410,12 @@ public partial class MainWindow : Window
     private void DownloadCable_Click(object sender, RoutedEventArgs e) =>
         Process.Start(new ProcessStartInfo("https://vb-audio.com/Cable/") { UseShellExecute = true });
 
+    private async void CheckComponents_Click(object sender, RoutedEventArgs e)
+    {
+        await _vm.CheckComponentsNowAsync();
+        ShowToast(_vm.CableUpdateAvailable ? _vm.CableUpdateText : "Seven Microphone · " + _vm.CableUpdateText);
+    }
+
     private void CheckCable_Click(object sender, RoutedEventArgs e)
     {
         _vm.RefreshDevices(restart: true);

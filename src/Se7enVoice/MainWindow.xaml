@@ -465,6 +465,8 @@
 
                                         <!-- installée : interrupteur, voix, hauteur -->
                                         <StackPanel Visibility="{Binding AiReady, Converter={StaticResource BoolToVis}}">
+                                            <TextBlock Text="{Binding AiModelsText}" Style="{StaticResource CaptionText}" Foreground="{DynamicResource GreenBrush}" TextWrapping="Wrap" Margin="0,0,0,6"
+                                                       Visibility="{Binding AiModelsText, Converter={x:Static vm:Converters.NotEmptyToVisibility}}" />
                                             <DockPanel Style="{StaticResource SettingRow}">
                                                 <ToggleButton DockPanel.Dock="Left" Style="{StaticResource Switch}" IsChecked="{Binding AiOn}" Margin="0,0,10,0" />
                                                 <TextBlock Text="Activer la voix IA" Style="{StaticResource StrongText}" />
@@ -1187,6 +1189,27 @@
                                             </WrapPanel>
                                         </StackPanel>
                                         <StackPanel Visibility="{Binding CableFound, Converter={x:Static vm:Converters.BoolToVisibility}}">
+                                            <!-- version du pilote : à jour ou mise à jour disponible -->
+                                            <DockPanel Margin="0,0,0,12">
+                                                <WrapPanel DockPanel.Dock="Right" VerticalAlignment="Center">
+                                                    <Button Style="{StaticResource SmallPrimaryButton}" c:Ui.Icon="&#xE896;" Content="Mettre à jour" Click="InstallCable_Click" Margin="8,0,0,0"
+                                                            Visibility="{Binding CableUpdateAvailable, Converter={StaticResource BoolToVis}}" IsEnabled="{Binding InstallingCable, Converter={x:Static vm:Converters.Not}}" />
+                                                    <Button Style="{StaticResource SmallGhostButton}" Content="Vérifier" Click="CheckComponents_Click" Margin="8,0,0,0"
+                                                            IsEnabled="{Binding CheckingComponents, Converter={x:Static vm:Converters.Not}}" />
+                                                </WrapPanel>
+                                                <TextBlock Text="{Binding CableUpdateText}" TextWrapping="Wrap" VerticalAlignment="Center">
+                                                    <TextBlock.Style>
+                                                        <Style TargetType="TextBlock" BasedOn="{StaticResource CaptionText}">
+                                                            <Style.Triggers>
+                                                                <DataTrigger Binding="{Binding CableUpToDate}" Value="True"><Setter Property="Foreground" Value="{DynamicResource GreenBrush}" /></DataTrigger>
+                                                                <DataTrigger Binding="{Binding CableUpdateAvailable}" Value="True"><Setter Property="Foreground" Value="{DynamicResource TextStrongBrush}" /></DataTrigger>
+                                                            </Style.Triggers>
+                                                        </Style>
+                                                    </TextBlock.Style>
+                                                </TextBlock>
+                                            </DockPanel>
+                                            <TextBlock Text="{Binding CableInstallStatus}" Style="{StaticResource StrongText}" Foreground="{DynamicResource TextStrongBrush}" Margin="0,0,0,12" TextWrapping="Wrap"
+                                                       Visibility="{Binding CableInstallStatus, Converter={x:Static vm:Converters.NotEmptyToVisibility}}" />
                                             <TextBlock c:Ui.Caps="Dans Discord et vos jeux" Style="{StaticResource MicroText}" Margin="0,0,0,8" />
                                             <!-- Quoi mettre en entrée et en sortie -->
                                             <Border Style="{StaticResource Well}" Padding="12,4">

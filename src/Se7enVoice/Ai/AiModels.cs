@@ -1,6 +1,7 @@
 using System.IO;
 using System.Net.Http;
 using System.Security.Cryptography;
+using Se7enVoice.Core.Updates;
 
 namespace Se7enVoice.Ai;
 
@@ -17,7 +18,8 @@ namespace Se7enVoice.Ai;
 public static class AiModels
 {
     public const string ContentVec = "contentvec768_fp16.onnx", Rmvpe = "rmvpe_fp16.onnx", Generator = "rvc_vctk48k.onnx";
-    private const string BaseUrl = "https://github.com/se7enclaude/se7en-voice/releases/download/voix-ia-1/";
+    public const string Release = "voix-ia-1";
+    private const string BaseUrl = "https://github.com/se7enclaude/se7en-voice/releases/download/" + Release + "/";
 
     public static readonly (string Name, long Size, string Sha256)[] Files =
     [
@@ -53,7 +55,7 @@ public static class AiModels
     public static string Folder { get; } =
         Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Se7enVoice", "voix-ia");
 
-    /// <summary>Les trois fichiers sont là avec la bonne taille (l'empreinte est vérifiée au téléchargement).</summary>
+    /// <summary>Les trois fichiers sont là avec la bonne taille et, quand elle est connue, la bonne empreinte.</summary>
     public static bool Ready => Files.All(f => new FileInfo(Path.Combine(Folder, f.Name)) is { Exists: true } fi && fi.Length == f.Size);
 
     /// <summary>Télécharge ce qui manque. <paramref name="progress"/> reçoit 0..1. Lève une exception en cas d'échec.</summary>
@@ -93,10 +95,48 @@ public static class AiModels
                 throw new IOException($"Fichier abîmé pendant le téléchargement ({f.Name}). Réessayez.");
             }
             File.Move(tmp, path, true);
+            ComponentsStore.Update(c => c.AiFiles[f.Name] = new VerifiedFile(f.Sha256, f.Size, DateTime.UtcNow));
         }
         progress.Report(1);
     }
 
-    private static bool IsComplete((string Name, long Size, string Sha256) f) =>
-        new FileInfo(Path.Combine(Folder, f.Name)) is { Exists: true } fi && fi.Length == f.Size;
+    /// <summary>
+    /// Présent avec la bonne taille, et pas remplacé depuis par d'autres modèles : si l'empreinte vérifiée ne correspond
+    /// plus à celle attendue par cette version de se7en Voice, le fichier est à mettre à jour (et seulement lui).
+    /// </summary>
+    private static bool IsComplete((string Name, long Size, string Sha256) f)
+    {
+        if (new FileInfo(Path.Combine(Folder, f.Name)) is not { Exists: true } fi || fi.Length != f.Size) return false;
+        var known = ComponentsStore.Current.AiFiles.GetValueOrDefault(f.Name);
+        return known is null || string.Equals(known.Sha256, f.Sha256, StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>État des modèles : à jour, mise à jour disponible, absents ou pas encore vérifiés.</summary>
+    public static ComponentState State =>
+        ComponentStatus.AiState(Files, ComponentsStore.Current.AiFiles,
+            name => new FileInfo(Path.Combine(Folder, name)) is { Exists: true } fi ? fi.Length : null);
+
+    /// <summary>« Modèles à jour (voix-ia-1, vérifiés le 9 nov. 2026) ».</summary>
+    public static string StatusText => ComponentStatus.AiText(State, Release, ComponentsStore.Current.AiFiles);
+
+    /// <summary>
+    /// Modèles installés avant le suivi des empreintes : calcule leur SHA-256 une seule fois (en arrière-plan) et la
+    /// retient. Un fichier abîmé est supprimé pour être retéléchargé proprement.
+    /// </summary>
+    public static async Task VerifyInstalledAsync(CancellationToken cancel = default)
+    {
+        foreach (var f in Files.Concat(Skeletons))
+        {
+            string path = Path.Combine(Folder, f.Name);
+            if (ComponentsStore.Current.AiFiles.ContainsKey(f.Name)) continue;
+            if (new FileInfo(path) is not { Exists: true } fi || fi.Length != f.Size) continue;
+            string hash;
+            await using (var s = File.OpenRead(path))
+                hash = Convert.ToHexStringLower(await SHA256.HashDataAsync(s, cancel));
+            if (hash == f.Sha256)
+                ComponentsStore.Update(c => c.AiFiles[f.Name] = new VerifiedFile(f.Sha256, f.Size, DateTime.UtcNow));
+            else
+                File.Delete(path);
+        }
+    }
 }

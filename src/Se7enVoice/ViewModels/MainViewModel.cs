@@ -73,6 +73,7 @@ public sealed partial class MainViewModel : Observable, IDisposable
         _meterTimer.Start();
         _saveTimer.Start();
         UpdateKeyTimer();
+        StartComponentChecks();
     }
 
     public MixerViewModel Mixer { get; }
@@ -198,6 +199,7 @@ public sealed partial class MainViewModel : Observable, IDisposable
         string? mic = _selectedMicrophone?.Id;
         RefreshDevices(restart: false);
         if (hadCable != CableFound || mic != _selectedMicrophone?.Id || !Engine.IsRunning) RestartAudio();
+        if (hadCable != CableFound) RefreshComponentTexts();
         if (!hadCable && CableFound) Notify?.Invoke("Micro virtuel détecté · choisissez « " + CableName + " » comme micro dans Discord");
     }
 
@@ -899,6 +901,7 @@ public sealed partial class MainViewModel : Observable, IDisposable
         finally
         {
             InstallingCable = false;
+            RefreshComponentTexts();
         }
     }
 
