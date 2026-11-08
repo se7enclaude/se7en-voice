@@ -62,6 +62,9 @@ public sealed class AiVoice : IDisposable
     /// <summary>Fréquence de la voix produite au moment de la création (si le générateur change de fréquence, il faut recréer).</summary>
     public int OutRate { get; }
     public bool TooSlow => ComputeMs > BlockMs * 0.9;
+    private int _errors;
+    /// <summary>Non null quand la conversion échoue en boucle (carte graphique réinitialisée…) : il faut recharger le moteur.</summary>
+    public volatile Exception? Failure;
 
     /// <summary>Thread audio : voix du micro (mono, fréquence du micro).</summary>
     public void Push(ReadOnlySpan<float> mic)
@@ -103,8 +106,14 @@ public sealed class AiVoice : IDisposable
                 // la hauteur automatique bouge doucement (pas de saut au milieu d'une phrase)
                 _semitones = ManualSemitones ?? _semitones + (semis - _semitones) * 0.1;
                 float[] audio;
-                try { audio = _engine.Convert(_window, Sid, _semitones); }
-                catch (Exception) { continue; }
+                try { audio = _engine.Convert(_window, Sid, _semitones); _errors = 0; }
+                catch (Exception ex)
+                {
+                    // 3 échecs de suite (≈ 0,3 s) : la carte graphique est perdue, l'interface recharge tout
+                    if (++_errors >= 3 && Failure == null) Failure = ex;
+                    if (Failure != null) Thread.Sleep(50);
+                    continue;
+                }
                 _range.Add(_engine.LastF0[^(Block16 / 160)..]); // trames du dernier bloc (voix de l'utilisateur, avant décalage)
                 ComputeMs = watch.Elapsed.TotalMilliseconds;
 

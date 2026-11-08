@@ -43,6 +43,7 @@ public sealed partial class MainViewModel
         {
             if (_settings.AiVoiceOn == value) return;
             _settings.AiVoiceOn = value;
+            if (value) _aiRecoveries.Clear(); // rallumer à la main = nouvelles relances permises
             MarkDirty();
             Raise();
             _ = ApplyAiAsync();
@@ -87,13 +88,22 @@ public sealed partial class MainViewModel
     private VoiceImport? _voiceImport;
 
     /// <summary>Fin de l'import : la voix rejoint la liste et devient la voix choisie.</summary>
-    public void AddCustomVoice(CustomAiVoice voice)
+    public void AddCustomVoice(CustomAiVoice voice) => AddCustomVoices([voice]);
+
+    public void AddCustomVoices(IReadOnlyList<CustomAiVoice> voices)
     {
-        _settings.AiCustomVoices.Add(voice);
-        var item = new AiVoiceItem(voice.ToInfo());
-        AiVoices.Add(item);
-        SelectAiVoice(item);
-        Notify?.Invoke($"Voix « {voice.Name} » importée · elle est maintenant active");
+        AiVoiceItem? last = null;
+        foreach (var voice in voices)
+        {
+            _settings.AiCustomVoices.Add(voice);
+            last = new AiVoiceItem(voice.ToInfo());
+            AiVoices.Add(last);
+        }
+        if (last == null) return;
+        SelectAiVoice(last);
+        Notify?.Invoke(voices.Count == 1
+            ? $"Voix « {last.Name} » importée · elle est maintenant active"
+            : $"{voices.Count} voix importées · « {last.Name} » est active");
     }
 
     public void DeleteCustomVoice(AiVoiceItem item)
@@ -158,6 +168,7 @@ public sealed partial class MainViewModel
     {
         if (_aiBusy) { _aiAgain = true; return; }
         _aiBusy = true;
+        bool retry = false;
         try
         {
           do
@@ -207,15 +218,67 @@ public sealed partial class MainViewModel
         }
         catch (Exception ex)
         {
-            StopAi();
-            AiStatus = "Voix IA indisponible : " + ex.Message;
-            Notify?.Invoke("La voix IA n'a pas pu démarrer : " + ex.Message);
+            ResetAiEngine();
+            if (RvcEngine.IsDeviceLost(ex) && AllowAiRecovery())
+            {
+                AiStatus = "La carte graphique ne répond plus (pilote réinitialisé) : nouvel essai dans 2 s…";
+                retry = true;
+            }
+            else
+            {
+                string why = RvcEngine.IsDeviceLost(ex)
+                    ? "la carte graphique ne répond plus. Fermez les jeux lourds, puis rallumez la voix IA (ou redémarrez le PC)."
+                    : ex.Message;
+                AiStatus = "Voix IA indisponible : " + why;
+                Notify?.Invoke("La voix IA n'a pas pu démarrer : " + why);
+            }
         }
         finally
         {
             _aiBusy = false;
         }
         Raise(nameof(LatencyText));
+        if (retry)
+        {
+            await Task.Delay(2000);
+            await ApplyAiAsync();
+        }
+    }
+
+    private readonly List<DateTime> _aiRecoveries = [];
+
+    /// <summary>Au plus 3 relances automatiques en 2 minutes (au-delà, la carte a un vrai problème).</summary>
+    private bool AllowAiRecovery()
+    {
+        var now = DateTime.UtcNow;
+        _aiRecoveries.RemoveAll(t => now - t > TimeSpan.FromMinutes(2));
+        if (_aiRecoveries.Count >= 3) return false;
+        _aiRecoveries.Add(now);
+        return true;
+    }
+
+    /// <summary>Libère tout ce qui est sur la carte graphique (pour repartir de zéro après une réinitialisation).</summary>
+    private void ResetAiEngine()
+    {
+        StopAi();
+        try { _rvc?.Dispose(); } catch { /* carte perdue : la libération peut échouer */ }
+        _rvc = null;
+    }
+
+    /// <summary>La conversion échoue en boucle (carte graphique réinitialisée) : on recharge tout.</summary>
+    private async Task RecoverAiAsync(Exception failure)
+    {
+        if (_aiBusy) return;
+        ResetAiEngine();
+        if (!AllowAiRecovery())
+        {
+            AiStatus = "La carte graphique se bloque à répétition : voix IA en pause. Rallumez-la, ou redémarrez le PC.";
+            Notify?.Invoke("Voix IA en pause : la carte graphique ne répond plus. " + (RvcEngine.IsDeviceLost(failure) ? "" : failure.Message));
+            return;
+        }
+        AiStatus = "La carte graphique a été réinitialisée : rechargement de la voix IA…";
+        await Task.Delay(1500);
+        await ApplyAiAsync();
     }
 
     private void StopAi()
@@ -242,6 +305,11 @@ public sealed partial class MainViewModel
         if (++_aiStatusTick % 15 != 0) return;
         var ai = _ai;
         if (ai == null || !AiOn) return;
+        if (ai.Failure is { } failure)
+        {
+            _ = RecoverAiAsync(failure);
+            return;
+        }
         string pitch = AiPitchAuto ? $"hauteur auto {ai.Semitones:+0;-0;0}" : $"hauteur {ai.Semitones:+0;-0;0}";
         AiStatus = ai.TooSlow
             ? $"{ai.Device} trop lent ({ai.ComputeMs:0} ms par bloc) : la voix va hacher. Fermez les jeux ou utilisez les voix classiques."

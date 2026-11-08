@@ -41,13 +41,29 @@ public sealed class RvcEngine : IDisposable
     /// <summary>Voix chargée : null = voix VCTK fournies, sinon le fichier importé.</summary>
     public string? GeneratorFile => _gen.File;
 
-    /// <summary>Charge le générateur d'une voix (lent : 1 à 3 s) sans toucher à celui en service.</summary>
+    /// <summary>
+    /// Charge le générateur d'une voix (lent : 1 à 3 s). Tout le travail sur la carte graphique passe par le même verrou
+    /// que la conversion : DirectML ne supporte pas deux calculs en même temps sur les mêmes réseaux (la carte peut
+    /// se bloquer, erreur 887A0006).
+    /// </summary>
     public RvcGenerator OpenGenerator(AiVoiceInfo voice)
     {
-        var g = RvcGenerator.Open(voice, OnGpu);
-        Run(g, new float[Window], 0); // chauffe
-        return g;
+        lock (_genLock)
+        {
+            var g = RvcGenerator.Open(voice, OnGpu);
+            try { Run(g, new float[Window], 0); } // chauffe
+            catch { g.Dispose(); throw; }
+            return g;
+        }
     }
+
+    /// <summary>La carte graphique a été réinitialisée (pilote planté, jeu, mise en veille) : tout est à recharger.</summary>
+    public static bool IsDeviceLost(Exception ex) =>
+        ex.Message.Contains("887A0005", StringComparison.OrdinalIgnoreCase)
+        || ex.Message.Contains("887A0006", StringComparison.OrdinalIgnoreCase)
+        || ex.Message.Contains("887A0007", StringComparison.OrdinalIgnoreCase)
+        || ex.Message.Contains("887A0020", StringComparison.OrdinalIgnoreCase)
+        || ex.Message.Contains("dml_provider_factory", StringComparison.OrdinalIgnoreCase);
 
     /// <summary>Met en service <paramref name="g"/> (l'ancien est libéré).</summary>
     public void UseGenerator(RvcGenerator g)
