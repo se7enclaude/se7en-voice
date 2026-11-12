@@ -26,6 +26,7 @@ public sealed class MixerViewModel : Observable
     private MMDevice? _master;
     private double _masterLevel, _duck = 1, _appsToMicLevel;
     private DateTime _lastScan;
+    private string? _lastScanError;
 
     public MixerViewModel(AppSettings settings, AudioEngine engine, Action markDirty, Action<string> notify)
     {
@@ -98,10 +99,19 @@ public sealed class MixerViewModel : Observable
 
     // ---------- Boucle ----------
 
-    /// <summary>Appelé ~30 fois par seconde par la fenêtre. <paramref name="voiceActive"/> : je parle en ce moment.</summary>
-    public void Tick(bool voiceActive, bool visible, float appsPeak)
+    /// <summary>Le ducking a besoin des niveaux et d'un tour de boucle rapide (~30 par seconde), même fenêtre cachée.</summary>
+    public bool DuckingOn => DuckOnMyVoice || DuckOnFriends;
+
+    /// <summary>
+    /// Appelé par la fenêtre (~30 fois par seconde, moins souvent fenêtre cachée sans ducking). <paramref name="voiceActive"/> :
+    /// je parle en ce moment ; <paramref name="visible"/> : la table de mixage est affichée ; <paramref name="windowShown"/> :
+    /// la fenêtre est à l'écran.
+    /// </summary>
+    public void Tick(bool voiceActive, bool visible, float appsPeak, bool windowShown = true)
     {
-        if (DateTime.UtcNow - _lastScan > TimeSpan.FromSeconds(visible ? 1.5 : 4))
+        // nouvelles applis : vite si la table est affichée, sans se presser sinon (fenêtre cachée : 10 s)
+        double every = visible ? 1.5 : windowShown ? 4 : 10;
+        if (DateTime.UtcNow - _lastScan > TimeSpan.FromSeconds(every))
         {
             _lastScan = DateTime.UtcNow;
             Scan();
@@ -118,9 +128,19 @@ public sealed class MixerViewModel : Observable
             foreach (var c in Channels)
                 if (DuckFor(c.Category) < 1 || prev < 1) c.ApplyAll();
 
+        if (!visible)
+        {
+            // table cachée : seuls les niveaux de la discussion servent (ducking quand les amis parlent)
+            if (DuckOnFriends)
+            {
+                var chat = ChannelOf(AppCategories.Chat);
+                foreach (var app in chat.Apps) app.UpdateLevel();
+                chat.UpdateLevel();
+            }
+            return;
+        }
         foreach (var app in _apps.Values) app.UpdateLevel();
         foreach (var c in Channels) c.UpdateLevel();
-        if (!visible) return;
         try { MasterLevel = Meter(_master?.AudioMeterInformation.MasterPeakValue ?? 0); } catch (Exception) { MasterLevel = 0; }
         AppsToMicLevel = Math.Max(Meter(appsPeak), AppsToMicLevel - 0.035);
     }
@@ -136,49 +156,79 @@ public sealed class MixerViewModel : Observable
             var def = _enumerator.GetDefaultAudioEndpoint(DataFlow.Render, Role.Multimedia);
             if (_master?.ID != def.ID)
             {
+                var old = _master;
                 _master = def;
                 MasterName = def.FriendlyName;
                 Raise(nameof(MasterName)); Raise(nameof(MasterVolume)); Raise(nameof(MasterMuted));
+                Release(old);
             }
+            else Release(def);
 
             foreach (var device in _enumerator.EnumerateAudioEndPoints(DataFlow.Render, DeviceState.Active))
             {
-                if (DeviceService.IsCable(device)) continue;
-                var manager = device.AudioSessionManager;
-                manager.RefreshSessions();
-                var sessions = manager.Sessions;
-                for (int i = 0; i < sessions.Count; i++)
+                try
                 {
-                    var s = sessions[i];
-                    if (s.State == NAudio.CoreAudioApi.Interfaces.AudioSessionState.AudioSessionStateExpired) continue;
-                    var (key, name, path, pid) = Identify(s);
-                    if (key == null || pid == Environment.ProcessId) continue;
-                    seen.Add(key);
-                    if (!_apps.TryGetValue(key, out var app))
+                    if (DeviceService.IsCable(device)) continue;
+                    var sessions = device.AudioSessionManager.Sessions; // la liste est lue à la création du gestionnaire
+                    for (int i = 0; i < sessions.Count; i++)
                     {
-                        var cat = _settings.AppCategoryOverrides.TryGetValue(key, out var o) && AppCategories.All.Contains(o)
-                            ? o : AppCategories.Classify(key, path, s.IsSystemSoundsSession);
-                        app = new MixerApp(this, key, name, cat, path);
-                        _apps[key] = app;
-                        ChannelOf(cat).Add(app);
+                        var s = sessions[i];
+                        bool kept = false;
+                        try
+                        {
+                            if (s.State == NAudio.CoreAudioApi.Interfaces.AudioSessionState.AudioSessionStateExpired) continue;
+                            var (key, name, path, pid) = Identify(s);
+                            if (key == null || pid == Environment.ProcessId) continue;
+                            seen.Add(key);
+                            if (!_apps.TryGetValue(key, out var app))
+                            {
+                                var cat = _settings.AppCategoryOverrides.TryGetValue(key, out var o) && AppCategories.All.Contains(o)
+                                    ? o : AppCategories.Classify(key, path, s.IsSystemSoundsSession);
+                                app = new MixerApp(this, key, name, cat, path);
+                                _apps[key] = app;
+                                ChannelOf(cat).Add(app);
+                            }
+                            app.Attach(s, pid);
+                            kept = true;
+                        }
+                        finally
+                        {
+                            if (!kept) Release(s);
+                        }
                     }
-                    app.Attach(s, pid);
+                }
+                finally
+                {
+                    // libère le gestionnaire de sessions du périphérique (sinon un abonnement de plus à chaque tour)
+                    Release(device);
                 }
             }
         }
-        catch (Exception)
+        catch (Exception ex)
         {
-            // Service audio occupé : on réessaiera au prochain tour.
+            // Service audio occupé : on réessaiera au prochain tour. Surtout ne rien retirer : un tour interrompu n'a
+            // pas vu toutes les applis, les retirer couperait leur envoi dans le micro.
+            if (ex.Message != _lastScanError) Log.Error("Mixeur : lecture des applis interrompue", ex);
+            _lastScanError = ex.Message;
+            foreach (var app in _apps.Values) app.AbortScan();
+            return;
         }
+        _lastScanError = null;
 
         foreach (var gone in _apps.Values.Where(a => !seen.Contains(a.Key)).ToList())
         {
             _apps.Remove(gone.Key);
             ChannelOf(gone.Category).Remove(gone);
-            gone.StopMic();
+            gone.Detach();
         }
         foreach (var app in _apps.Values) app.EndScan();
         RaiseVisibleIfChanged();
+    }
+
+    /// <summary>Libère un objet audio de Windows sans jamais lever d'exception (périphérique débranché entre-temps…).</summary>
+    internal static void Release(IDisposable? o)
+    {
+        try { o?.Dispose(); } catch (Exception) { }
     }
 
     private static (string? key, string name, string? path, int pid) Identify(AudioSessionControl s)
@@ -283,7 +333,8 @@ public sealed class MixerViewModel : Observable
 
     public void Dispose()
     {
-        foreach (var app in _apps.Values) app.StopMic();
+        foreach (var app in _apps.Values) app.Detach();
+        Release(_master);
         _enumerator.Dispose();
     }
 }
@@ -352,7 +403,9 @@ public sealed class MixerApp : Observable
     private readonly List<AudioSessionControl> _sessions = [], _scan = [];
     private double _level;
     private int _pid;
-    private bool _mic, _micActive;
+    private bool _mic, _micActive, _micStarting, _detached;
+    private int _micFailures;
+    private DateTime _micRetryAt;
 
     internal MixerApp(MixerViewModel owner, string key, string name, string category, string? path)
     {
@@ -431,11 +484,29 @@ public sealed class MixerApp : Observable
     internal void EndScan()
     {
         bool fresh = _scan.Count != _sessions.Count;
+        foreach (var s in _sessions) MixerViewModel.Release(s); // remplacées par celles de ce tour
         _sessions.Clear();
         _sessions.AddRange(_scan);
         _scan.Clear();
         if (fresh) Apply();
         if (_mic && !_micActive) RestartMicQuiet();
+    }
+
+    /// <summary>Tour de lecture interrompu : on garde les sessions du tour précédent.</summary>
+    internal void AbortScan()
+    {
+        foreach (var s in _scan) MixerViewModel.Release(s);
+        _scan.Clear();
+    }
+
+    /// <summary>L'appli a disparu (ou la table se ferme) : plus d'envoi dans le micro, sessions libérées.</summary>
+    internal void Detach()
+    {
+        _detached = true;
+        StopMic();
+        AbortScan();
+        foreach (var s in _sessions) MixerViewModel.Release(s);
+        _sessions.Clear();
     }
 
     /// <summary>Applique volume × tranche × ducking aux sessions Windows (seulement si l'utilisateur a réglé quelque chose).</summary>
@@ -468,32 +539,62 @@ public sealed class MixerApp : Observable
         Level = m > _level ? m : Math.Max(m, _level - 0.035);
     }
 
+    /// <summary>Lance l'envoi dans le micro (la capture est créée hors du fil de l'interface). Faux si l'appli n'a pas de processus connu.</summary>
     internal bool StartMic(Action<string> notify)
     {
         if (_pid == 0) return false;
-        try
+        _ = StartMicAsync(notify, revertOnFailure: true);
+        return true;
+    }
+
+    /// <summary>
+    /// Crée la capture de l'appli sur un autre fil (Windows peut mettre jusqu'à 5 s à répondre) puis revient sur le fil
+    /// de l'interface. En cas d'échec, les nouvelles tentatives automatiques s'espacent (4 s, 8 s… jusqu'à 1 min).
+    /// </summary>
+    private async Task StartMicAsync(Action<string>? notify, bool revertOnFailure)
+    {
+        if (_micStarting) return;
+        _micStarting = true;
+        int pid = _pid;
+        var engine = _owner.Engine;
+        Exception? error = null;
+        try { await Task.Run(() => engine.AddApp(pid)); }
+        catch (Exception ex) { error = ex; }
+        finally { _micStarting = false; }
+
+        if (error == null)
         {
-            _owner.Engine.AddApp(_pid);
-            _micActive = true;
-            return true;
+            if (!_mic || _detached) { engine.RemoveApp(pid); return; } // décochée ou disparue entre-temps
+            // le moteur a pu redémarrer pendant ce temps (captures coupées) : le prochain tour relancera
+            _micActive = engine.AppIds.Contains(pid);
+            if (_micActive) _micFailures = 0;
+            return;
         }
-        catch (Exception ex)
+
+        _micFailures++;
+        _micRetryAt = DateTime.UtcNow + TimeSpan.FromSeconds(Math.Min(60, 2 << Math.Min(_micFailures, 5)));
+        Log.Write($"Mixeur : « {Name} » ne peut pas être envoyé dans le micro ({error.Message})");
+        if (notify == null) return;
+        notify($"Impossible d'envoyer « {Name} » dans le micro : {error.Message}");
+        if (revertOnFailure)
         {
-            notify($"Impossible d'envoyer « {Name} » dans le micro : {ex.Message}");
-            return false;
+            _mic = false;
+            Raise(nameof(ToMic));
         }
     }
 
     private void RestartMicQuiet()
     {
-        if (_pid == 0 || !_owner.Engine.IsRunning) return;
-        try { _owner.Engine.AddApp(_pid); _micActive = true; } catch (Exception) { }
+        if (_pid == 0 || _micStarting || _detached || !_owner.Engine.IsRunning || DateTime.UtcNow < _micRetryAt) return;
+        _ = StartMicAsync(null, revertOnFailure: false);
     }
 
     internal void RestartMic(Action<string> notify)
     {
         _micActive = false;
-        if (_mic && _owner.Engine.IsRunning) StartMic(notify);
+        _micFailures = 0;
+        _micRetryAt = default;
+        if (_mic && !_detached && _owner.Engine.IsRunning && _pid != 0) _ = StartMicAsync(notify, revertOnFailure: false);
     }
 
     internal void StopMic()

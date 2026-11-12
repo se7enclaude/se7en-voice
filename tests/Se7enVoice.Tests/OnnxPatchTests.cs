@@ -39,6 +39,20 @@ public class OnnxPatchTests
     }
 
     [Fact]
+    public void Patching_in_place_gives_the_same_bytes_as_a_copy()
+    {
+        (string, PthTensor)[] weights =
+        [
+            ("net.dec.bias", new PthTensor([3], [7f, 8f, 9f])),
+            ("net.emb_g.weight", new PthTensor([1, 3], [10f, 11f, 12f])),
+        ];
+        var copy = OnnxPatch.Apply(Model(), weights);
+        var inPlace = Model();
+        OnnxPatch.ApplyInPlace(inPlace, weights);
+        Assert.Equal(copy, inPlace);
+    }
+
+    [Fact]
     public void Refuses_a_voice_of_another_architecture()
     {
         Assert.Throws<InvalidDataException>(() => OnnxPatch.Apply(Model(), [("net.inconnu", new PthTensor([3], [1f, 2f, 3f]))]));

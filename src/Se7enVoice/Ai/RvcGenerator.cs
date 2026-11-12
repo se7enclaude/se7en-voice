@@ -57,11 +57,12 @@ public static class AiVoiceImporter
     /// <summary>Écrit le générateur de la voix (≈ 110 Mo) dans le dossier des voix perso ; le squelette doit être là.</summary>
     public static string Build(RvcVoiceModel m, string id)
     {
-        var skeleton = System.IO.File.ReadAllBytes(Path.Combine(AiModels.Folder, AiModels.SkeletonFor(m.SampleRate)));
-        var patched = OnnxPatch.Apply(skeleton, m.Weights);
+        // une seule copie du squelette en mémoire : les poids sont remplacés directement dedans
+        var model = System.IO.File.ReadAllBytes(Path.Combine(AiModels.Folder, AiModels.SkeletonFor(m.SampleRate)));
+        OnnxPatch.ApplyInPlace(model, m.Weights);
         Directory.CreateDirectory(Folder);
         string path = Path.Combine(Folder, id + ".onnx"), tmp = path + ".part";
-        System.IO.File.WriteAllBytes(tmp, patched);
+        System.IO.File.WriteAllBytes(tmp, model);
         System.IO.File.Move(tmp, path, true);
         return path;
     }

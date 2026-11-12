@@ -1,24 +1,74 @@
+using System.Collections.Concurrent;
 using NAudio.Wave;
 using NAudio.Wave.SampleProviders;
 
 namespace Se7enVoice.Audio;
 
-/// <summary>Sons lus dans le micro (mixés après les effets de voix).</summary>
+/// <summary>
+/// Sons lus dans le micro (mixés après les effets de voix). Le fil audio ne touche jamais aux fichiers : un fil à part
+/// décode chaque son dans un tampon circulaire que le fil audio ne fait que lire. Le début du son est décodé dès le
+/// déclenchement (<see cref="Play"/>), il part donc au bloc audio suivant, comme avant.
+/// </summary>
 public sealed class Soundboard
 {
-    private sealed class Voice(AudioFileReader reader, ISampleProvider source)
+    private const int RingSize = 1 << 16, Mask = RingSize - 1; // ≈ 1,4 s à 48 kHz
+    private const int Chunk = 4096;
+
+    /// <summary>Un son en cours : un producteur (le décodage) et un consommateur (le fil audio), sans verrou.</summary>
+    private sealed class Voice(AudioFileReader reader, ISampleProvider source) : IDisposable
     {
-        public AudioFileReader Reader { get; } = reader;
-        public ISampleProvider Source { get; } = source;
+        private readonly float[] _ring = new float[RingSize];
+        private long _write, _read;
+        /// <summary>Le décodage a atteint la fin du fichier (écrit après le dernier échantillon).</summary>
+        private volatile bool _endOfFile;
+        /// <summary>Joué jusqu'au bout ou arrêté : le fil de décodage peut le libérer.</summary>
+        public volatile bool Done;
+
+        /// <summary>Fil de décodage (ou <see cref="Play"/> avant la publication) : remplit le tampon, au plus <paramref name="max"/> échantillons.</summary>
+        public void Fill(float[] tmp, int max)
+        {
+            while (!_endOfFile && !Done && max > 0)
+            {
+                int free = RingSize - (int)(_write - Volatile.Read(ref _read));
+                int want = Math.Min(Math.Min(free, tmp.Length), max);
+                if (want <= 0) return;
+                int got;
+                try { got = source.Read(tmp, 0, want); }
+                catch (Exception) { got = 0; } // fichier abîmé : le son s'arrête là
+                for (int i = 0; i < got; i++) _ring[(_write + i) & Mask] = tmp[i];
+                Volatile.Write(ref _write, _write + got);
+                max -= got;
+                if (got == 0) _endOfFile = true;
+            }
+        }
+
+        /// <summary>Fil audio : ajoute la suite du son dans <paramref name="mix"/>.</summary>
+        public void MixInto(Span<float> mix, float vol)
+        {
+            long r = _read;
+            int n = (int)Math.Min(Volatile.Read(ref _write) - r, mix.Length);
+            for (int i = 0; i < n; i++) mix[i] += _ring[(r + i) & Mask] * vol;
+            Volatile.Write(ref _read, r + n);
+            // fin du fichier lue avant la position d'écriture : celle-ci est alors définitive
+            if (_endOfFile && r + n == Volatile.Read(ref _write)) Done = true;
+        }
+
+        public void Dispose()
+        {
+            Done = true;
+            reader.Dispose();
+        }
     }
 
     private readonly object _lock = new();
-    private readonly List<Voice> _voices = [];
-    private float[] _tmp = new float[4096];
+    private volatile Voice[] _voices = [];
+    private readonly ConcurrentQueue<Voice> _retired = new();
+    private readonly AutoResetEvent _wake = new(false);
+    private Thread? _decoder;
 
     public int SampleRate { get; set; } = 48000;
     public float Volume { get; set; } = 0.5f;
-    public bool IsPlaying { get { lock (_lock) return _voices.Count > 0; } }
+    public bool IsPlaying => _voices.Any(v => !v.Done);
 
     /// <summary>Lance un son. Lève une exception si le fichier est illisible.</summary>
     public void Play(string path)
@@ -28,40 +78,72 @@ public sealed class Soundboard
         if (p.WaveFormat.Channels == 2) p = new StereoToMonoSampleProvider(p);
         else if (p.WaveFormat.Channels > 2) p = new DownmixProvider(p);
         if (p.WaveFormat.SampleRate != SampleRate) p = new WdlResamplingSampleProvider(p, SampleRate);
-        lock (_lock) _voices.Add(new Voice(reader, p));
+        var voice = new Voice(reader, p);
+        voice.Fill(new float[Chunk], Math.Max(Chunk, SampleRate / 2)); // ½ s prête avant même le prochain bloc audio
+        lock (_lock)
+        {
+            _voices = [.. _voices, voice];
+            if (_decoder == null)
+            {
+                _decoder = new Thread(DecodeLoop) { IsBackground = true, Name = "soundboard", Priority = ThreadPriority.AboveNormal };
+                _decoder.Start();
+            }
+        }
+        _wake.Set();
     }
 
     public void StopAll()
     {
+        Voice[] old;
         lock (_lock)
         {
-            foreach (var v in _voices) v.Reader.Dispose();
-            _voices.Clear();
+            old = _voices;
+            _voices = [];
         }
+        foreach (var v in old)
+        {
+            v.Done = true;
+            _retired.Enqueue(v); // libéré par le fil de décodage : il est peut-être en train de le lire
+        }
+        if (old.Length > 0) _wake.Set();
     }
 
-    /// <summary>Ajoute les sons en cours dans <paramref name="mix"/>. Retourne vrai si quelque chose a été ajouté.</summary>
+    /// <summary>Fil audio : ajoute les sons en cours dans <paramref name="mix"/>. Retourne vrai si quelque chose a été ajouté.</summary>
     public bool MixInto(Span<float> mix)
     {
-        lock (_lock)
+        var voices = _voices;
+        if (voices.Length == 0) return false;
+        float vol = Volume;
+        bool any = false;
+        foreach (var v in voices)
         {
-            if (_voices.Count == 0) return false;
-            if (_tmp.Length < mix.Length) _tmp = new float[mix.Length];
-            float vol = Volume;
-            for (int v = _voices.Count - 1; v >= 0; v--)
+            if (v.Done) continue;
+            any = true;
+            v.MixInto(mix, vol);
+        }
+        return any;
+    }
+
+    private void DecodeLoop()
+    {
+        var tmp = new float[Chunk];
+        while (true)
+        {
+            _wake.WaitOne(_voices.Length == 0 && _retired.IsEmpty ? Timeout.Infinite : 20);
+            var voices = _voices;
+            foreach (var v in voices) v.Fill(tmp, int.MaxValue);
+
+            if (voices.Any(v => v.Done))
             {
-                var voice = _voices[v];
-                int read;
-                try { read = voice.Source.Read(_tmp, 0, mix.Length); }
-                catch (Exception) { read = 0; }
-                for (int i = 0; i < read; i++) mix[i] += _tmp[i] * vol;
-                if (read < mix.Length)
+                List<Voice> finished;
+                lock (_lock)
                 {
-                    voice.Reader.Dispose();
-                    _voices.RemoveAt(v);
+                    finished = _voices.Where(v => v.Done).ToList();
+                    _voices = _voices.Where(v => !v.Done).ToArray();
                 }
+                foreach (var v in finished) v.Dispose();
             }
-            return true;
+            while (_retired.TryDequeue(out var r)) r.Dispose();
         }
     }
 

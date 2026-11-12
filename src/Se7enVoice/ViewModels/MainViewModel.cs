@@ -17,9 +17,22 @@ public sealed partial class MainViewModel : Observable, IDisposable
     private readonly DispatcherTimer _meterTimer, _saveTimer, _retryTimer, _deviceDebounce, _keyTimer;
     private bool _dirty;
     private string _presetFilter = AllFilter, _presetSearch = "";
-    private bool _bypass, _capturingKey, _mixerVisible;
+    private bool _bypass, _capturingKey, _mixerVisible, _windowShown = true;
     private int _keyCaptureTicks;
     private double _sinceVoice = 99;
+    private readonly System.Diagnostics.Stopwatch _meterClock = System.Diagnostics.Stopwatch.StartNew();
+    private TimeSpan _lastMeterTick;
+
+    // Push-to-talk : lu par un minuteur hors du fil de l'interface (une interface occupée ne retarde pas la parole).
+    private readonly object _pttLock = new();
+    private System.Threading.Timer? _pttTimer;
+    private bool _pttActive;
+    private int _pttKey;
+
+    // Redémarrage du micro : sur un autre fil, un seul à la fois (le dernier demandé gagne).
+    private readonly SemaphoreSlim _restartGate = new(1, 1);
+    private int _restartRequest;
+    private bool _audioRestarting, _disposed;
 
     private List<AudioDevice> _microphones = [], _speakers = [];
     private AudioDevice? _selectedMicrophone, _selectedMonitor;
@@ -65,7 +78,7 @@ public sealed partial class MainViewModel : Observable, IDisposable
         _deviceDebounce.Stop();
         Devices.Changed += () => Dispatcher.BeginInvoke(() => { _deviceDebounce.Stop(); _deviceDebounce.Start(); });
 
-        // Push-to-talk et capture de touche : on lit l'état du clavier/souris ~60 fois par seconde.
+        // Capture de la touche du push-to-talk : on lit l'état du clavier/souris ~60 fois par seconde.
         _keyTimer = new DispatcherTimer(TimeSpan.FromMilliseconds(16), DispatcherPriority.Normal, (_, _) => KeyTick(), Dispatcher);
         _keyTimer.Stop();
 
@@ -203,21 +216,49 @@ public sealed partial class MainViewModel : Observable, IDisposable
         if (!hadCable && CableFound) Notify?.Invoke("Micro virtuel détecté · choisissez « " + CableName + " » comme micro dans Discord");
     }
 
-    public void RestartAudio()
+    /// <summary>
+    /// (Re)démarre le micro. Le travail lent (ouverture des périphériques, WASAPI) se fait sur un autre fil pour ne pas
+    /// figer la fenêtre ; les redémarrages sont faits un par un, et seul le dernier demandé compte. L'état affiché est
+    /// mis à jour sur le fil de l'interface.
+    /// </summary>
+    public void RestartAudio() => _ = RestartAudioAsync();
+
+    private async Task RestartAudioAsync()
     {
-        var mic = Devices.Get(_selectedMicrophone?.Id);
-        if (mic == null)
-        {
-            Engine.Stop();
-            Live = false;
-            Status = "Aucun micro branché";
-            return;
-        }
+        int request = ++_restartRequest;
+        await _restartGate.WaitAsync();
         try
         {
-            var cable = Devices.Get(Devices.CableInput()?.Id);
+            if (request != _restartRequest || _disposed) return; // un redémarrage plus récent attend : il fera le travail
+            _audioRestarting = true;
+            string? micId = _selectedMicrophone?.Id, monitorId = _selectedMonitor?.Id;
+            bool monitorOn = MonitorOn;
+
+            // 1) arrêt du moteur d'abord : plus aucun bloc audio ne peut toucher la voix IA qu'on va libérer
+            var devices = await Task.Run<(NAudio.CoreAudioApi.MMDevice? mic, NAudio.CoreAudioApi.MMDevice? cable, NAudio.CoreAudioApi.MMDevice? monitor)>(() =>
+            {
+                var mic = Devices.Get(micId);
+                Engine.Stop();
+                if (mic == null) return default;
+                var cable = Devices.Get(Devices.CableInput()?.Id);
+                var monitor = monitorOn ? Devices.Get(monitorId) ?? Devices.Get(Devices.DefaultSpeakerId()) : null;
+                return (mic, cable, monitor);
+            });
             StopAi(); // la voix IA est liée à la fréquence du micro : on la recrée après
-            Engine.Start(mic, cable, MonitorOn ? MonitorDevice() : null);
+            if (devices.mic == null)
+            {
+                Live = false;
+                Status = "Aucun micro branché";
+                return;
+            }
+
+            // 2) démarrage
+            await Task.Run(() =>
+            {
+                if (!_disposed) Engine.Start(devices.mic, devices.cable, devices.monitor);
+            });
+            if (_disposed) return;
+            _audioRestarting = false;
             _ = ApplyAiAsync();
             Mixer.RestartMicApps();
             Raise(nameof(LatencyText)); Raise(nameof(RateText));
@@ -226,10 +267,19 @@ public sealed partial class MainViewModel : Observable, IDisposable
         }
         catch (Exception ex)
         {
-            Live = false;
-            Status = "Micro indisponible";
-            Notify?.Invoke("Impossible d'ouvrir le micro : " + ex.Message);
-            _retryTimer.Start();
+            Log.Error("Ouverture du micro impossible", ex);
+            if (!_disposed)
+            {
+                Live = false;
+                Status = "Micro indisponible";
+                Notify?.Invoke("Impossible d'ouvrir le micro : " + ex.Message);
+                _retryTimer.Start();
+            }
+        }
+        finally
+        {
+            _audioRestarting = false;
+            _restartGate.Release();
         }
     }
 
@@ -238,6 +288,7 @@ public sealed partial class MainViewModel : Observable, IDisposable
 
     private void OnFaulted(string message)
     {
+        Log.Write("Moteur audio : " + message);
         Live = false;
         Status = "Reconnexion…";
         _retryTimer.Stop();
@@ -246,6 +297,13 @@ public sealed partial class MainViewModel : Observable, IDisposable
 
     private void UpdateMeters()
     {
+        // Fenêtre cachée (zone de notification) : 4 tours par seconde suffisent, sauf si le ducking doit suivre la voix.
+        var interval = TimeSpan.FromMilliseconds(!_windowShown && !Mixer.DuckingOn ? 250 : 33);
+        if (_meterTimer.Interval != interval) _meterTimer.Interval = interval;
+        var now = _meterClock.Elapsed;
+        double dt = Math.Clamp((now - _lastMeterTick).TotalSeconds, 0, 1);
+        _lastMeterTick = now;
+
         TickAi();
         var (i, o, a) = Engine.TakeLevels();
         InputLevel = Smooth(InputLevel, ToMeter(i));
@@ -253,8 +311,8 @@ public sealed partial class MainViewModel : Observable, IDisposable
 
         // « Je parle » : le micro dépasse le seuil de l'anti-bruit (ou -45 dB) depuis moins de 300 ms.
         double thresholdDb = GateOn ? GateThresholdDb + 6 : -45;
-        _sinceVoice = i > 0 && 20 * Math.Log10(i) > thresholdDb && !Muted ? 0 : _sinceVoice + 0.033;
-        Mixer.Tick(_sinceVoice < 0.3, _mixerVisible, a);
+        _sinceVoice = i > 0 && 20 * Math.Log10(i) > thresholdDb && !Muted ? 0 : _sinceVoice + dt;
+        Mixer.Tick(_sinceVoice < 0.3, _mixerVisible, a, _windowShown);
         Talking = _sinceVoice < 0.3 && Engine.TalkOpen && !Muted;
 
         if (Engine.IsRecording) Raise(nameof(RecordingTime));
@@ -669,10 +727,33 @@ public sealed partial class MainViewModel : Observable, IDisposable
 
     private void UpdateKeyTimer()
     {
-        bool need = _settings.PushToTalkOn || _capturingKey;
-        if (need && !_keyTimer.IsEnabled) _keyTimer.Start();
-        if (!need) _keyTimer.Stop();
-        Engine.TalkOpen = !_settings.PushToTalkOn;
+        if (_capturingKey && !_keyTimer.IsEnabled) _keyTimer.Start();
+        if (!_capturingKey) _keyTimer.Stop();
+
+        // Push-to-talk (en pause pendant la capture d'une nouvelle touche, comme avant)
+        bool ptt = _settings.PushToTalkOn && !_capturingKey && !_disposed;
+        lock (_pttLock)
+        {
+            _pttActive = ptt;
+            _pttKey = _settings.PushToTalkKey;
+            Engine.TalkOpen = !_settings.PushToTalkOn;
+        }
+        if (ptt) _pttTimer ??= new System.Threading.Timer(_ => PushToTalkTick(), null, 0, 16);
+        else
+        {
+            _pttTimer?.Dispose();
+            _pttTimer = null;
+        }
+    }
+
+    /// <summary>Minuteur du push-to-talk (fil du pool) : la touche tenue ouvre le micro, directement dans le moteur.</summary>
+    private void PushToTalkTick()
+    {
+        lock (_pttLock)
+        {
+            // sous verrou : un tour en retard ne peut pas refermer le micro après l'arrêt du push-to-talk
+            if (_pttActive) Engine.TalkOpen = KeyWatcher.IsHeld(_pttKey);
+        }
     }
 
     private void KeyTick()
@@ -690,13 +771,14 @@ public sealed partial class MainViewModel : Observable, IDisposable
                 Notify?.Invoke("Push-to-talk activé · maintenez « " + KeyWatcher.NameOf(vk) + " » pour parler.");
             }
             else if (_keyCaptureTicks > 600) { CapturingKey = false; UpdateKeyTimer(); }
-            return;
         }
-        if (_settings.PushToTalkOn) Engine.TalkOpen = KeyWatcher.IsHeld(_settings.PushToTalkKey);
     }
 
     /// <summary>La fenêtre affiche la table de mixage (vu-mètres à rafraîchir).</summary>
     public bool MixerVisible { get => _mixerVisible; set => _mixerVisible = value; }
+
+    /// <summary>La fenêtre est à l'écran (ni cachée dans la zone de notification, ni réduite) : sinon, minuteurs ralentis.</summary>
+    public bool WindowShown { get => _windowShown; set => _windowShown = value; }
 
     // ---------- Soundboard ----------
 
@@ -952,9 +1034,13 @@ public sealed partial class MainViewModel : Observable, IDisposable
 
     public void Dispose()
     {
+        _disposed = true;
         _meterTimer.Stop();
         _saveTimer.Stop();
         _keyTimer.Stop();
+        lock (_pttLock) _pttActive = false;
+        _pttTimer?.Dispose();
+        _pttTimer = null;
         Engine.StopRecording();
         Mixer.Dispose();
         _settings.Save();

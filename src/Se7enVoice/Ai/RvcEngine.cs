@@ -1,6 +1,7 @@
 using System.IO;
 using Microsoft.ML.OnnxRuntime;
 using Microsoft.ML.OnnxRuntime.Tensors;
+using Se7enVoice.Core;
 using Se7enVoice.Core.Ai;
 
 namespace Se7enVoice.Ai;
@@ -17,9 +18,12 @@ public sealed class RvcEngine : IDisposable
     private readonly InferenceSession _vec, _rmvpe;
     private readonly object _genLock = new();
     private RvcGenerator _gen;
+    private bool _disposed; // lu et écrit sous _genLock
     private readonly MelSpectrogram _mel = new();
     private readonly float[] _melBuf = new float[MelSpectrogram.Mels * 128];
+    private readonly float[] _mel100 = new float[MelSpectrogram.Mels * Frames];
     private readonly float[] _f0 = new float[Frames];
+    private readonly float[] _pitchf = new float[Frames];
     private readonly long[] _coarse = new long[Frames];
     private readonly float[] _phone = new float[Frames * 768];
     private readonly float[] _rnd = new float[192 * Frames];
@@ -36,6 +40,8 @@ public sealed class RvcEngine : IDisposable
     /// <summary>« Carte graphique » ou « Processeur ».</summary>
     public string Device => OnGpu ? "Carte graphique" : "Processeur";
     public bool OnGpu { get; }
+    /// <summary>Pourquoi le moteur tourne sur le processeur alors que la carte graphique a été essayée (null sinon).</summary>
+    public string? GpuFallbackReason { get; private set; }
     /// <summary>Fréquence de la voix produite (32, 40 ou 48 kHz selon le générateur).</summary>
     public int OutRate => _gen.Rate;
     /// <summary>Voix chargée : null = voix VCTK fournies, sinon le fichier importé.</summary>
@@ -50,8 +56,9 @@ public sealed class RvcEngine : IDisposable
     {
         lock (_genLock)
         {
+            ObjectDisposedException.ThrowIf(_disposed, this);
             var g = RvcGenerator.Open(voice, OnGpu);
-            try { Run(g, new float[Window], 0); } // chauffe
+            try { Run(g, new float[Window], 0, 0, Span<float>.Empty, out _); } // chauffe
             catch { g.Dispose(); throw; }
             return g;
         }
@@ -59,40 +66,77 @@ public sealed class RvcEngine : IDisposable
 
     /// <summary>La carte graphique a été réinitialisée (pilote planté, jeu, mise en veille) : tout est à recharger.</summary>
     public static bool IsDeviceLost(Exception ex) =>
+        IsDeviceReset(ex) || ex.Message.Contains("dml_provider_factory", StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>Codes DXGI d'une carte bien présente mais retirée, bloquée ou réinitialisée : elle reviendra.</summary>
+    private static bool IsDeviceReset(Exception ex) =>
         ex.Message.Contains("887A0005", StringComparison.OrdinalIgnoreCase)
         || ex.Message.Contains("887A0006", StringComparison.OrdinalIgnoreCase)
         || ex.Message.Contains("887A0007", StringComparison.OrdinalIgnoreCase)
-        || ex.Message.Contains("887A0020", StringComparison.OrdinalIgnoreCase)
-        || ex.Message.Contains("dml_provider_factory", StringComparison.OrdinalIgnoreCase);
+        || ex.Message.Contains("887A0020", StringComparison.OrdinalIgnoreCase);
 
     /// <summary>Met en service <paramref name="g"/> (l'ancien est libéré).</summary>
     public void UseGenerator(RvcGenerator g)
     {
-        RvcGenerator old;
-        lock (_genLock) { old = _gen; _gen = g; }
-        if (!ReferenceEquals(old, g)) old.Dispose();
+        RvcGenerator? unused;
+        lock (_genLock)
+        {
+            if (_disposed) unused = g; // moteur déjà libéré : le nouveau générateur ne servira jamais
+            else
+            {
+                unused = ReferenceEquals(_gen, g) ? null : _gen;
+                _gen = g;
+            }
+        }
+        unused?.Dispose(); // plus aucun calcul ne peut l'utiliser : ils passent tous par le verrou
     }
 
     /// <summary>Hauteur de la dernière fenêtre (Hz, 0 = pas de voix), pour la hauteur automatique.</summary>
     public ReadOnlySpan<float> LastF0 => _f0;
 
+    /// <summary>
+    /// Charge les réseaux sur la carte graphique, ou à défaut sur le processeur (<see cref="GpuFallbackReason"/>).
+    /// Une carte présente mais réinitialisée (pilote planté, jeu, mise en veille : codes 887A…) n'entraîne pas de
+    /// repli : l'erreur remonte et l'appelant réessaie sur la carte, au lieu de rester sur le processeur (lent) jusqu'au
+    /// redémarrage de l'appli.
+    /// </summary>
     public static RvcEngine Load(string folder)
     {
         try
         {
             return Create(folder, gpu: true);
         }
-        catch (Exception)
+        catch (Exception ex) when (!IsDeviceReset(ex))
         {
-            return Create(folder, gpu: false); // pas de DirectML (vieille carte, pilote) : le processeur, plus lent
+            // pas de DirectML utilisable (vieille carte, pilote, pas de carte compatible) : le processeur, plus lent
+            Log.Error("Voix IA : carte graphique inutilisable, repli sur le processeur", ex);
+            var engine = Create(folder, gpu: false);
+            engine.GpuFallbackReason = ex.Message;
+            return engine;
         }
     }
 
     private static RvcEngine Create(string folder, bool gpu)
     {
-        InferenceSession Open(string file) => new(Path.Combine(folder, file), Options(gpu));
-        var engine = new RvcEngine(Open(AiModels.ContentVec), Open(AiModels.Rmvpe), RvcGenerator.Open(AiVoices.All[0], gpu), gpu);
-        engine.Convert(new float[Window], 0, 0); // chauffe : la première passe compile les noyaux
+        InferenceSession? vec = null, rmvpe = null;
+        RvcGenerator? gen = null;
+        try
+        {
+            vec = new InferenceSession(Path.Combine(folder, AiModels.ContentVec), Options(gpu));
+            rmvpe = new InferenceSession(Path.Combine(folder, AiModels.Rmvpe), Options(gpu));
+            gen = RvcGenerator.Open(AiVoices.All[0], gpu);
+        }
+        catch
+        {
+            // les sessions déjà ouvertes (mémoire de la carte graphique) ne doivent pas fuir
+            gen?.Dispose();
+            rmvpe?.Dispose();
+            vec?.Dispose();
+            throw;
+        }
+        var engine = new RvcEngine(vec, rmvpe, gen, gpu);
+        try { engine.Convert(new float[Window], 0, 0); } // chauffe : la première passe compile les noyaux
+        catch { engine.Dispose(); throw; }
         return engine;
     }
 
@@ -119,39 +163,65 @@ public sealed class RvcEngine : IDisposable
     /// <summary>Convertit la fenêtre de 1 s (16 kHz) avec la voix <paramref name="sid"/> décalée de <paramref name="semitones"/>. Renvoie 1 s à <see cref="OutRate"/>.</summary>
     public float[] Convert(float[] window16k, int sid, double semitones)
     {
-        lock (_genLock) return Run(_gen, window16k, sid, semitones);
+        lock (_genLock)
+        {
+            ObjectDisposedException.ThrowIf(_disposed, this);
+            Run(_gen, window16k, sid, semitones, Span<float>.Empty, out var result);
+            return result!;
+        }
     }
 
-    private float[] Run(RvcGenerator gen, float[] window16k, int sid, double semitones = 0)
+    /// <summary>
+    /// Comme <see cref="Convert(float[], int, double)"/>, mais écrit la voix dans <paramref name="dest"/> sans rien allouer
+    /// (le fil de la voix IA convertit 10 fois par seconde). Renvoie le nombre d'échantillons écrits.
+    /// </summary>
+    public int Convert(float[] window16k, int sid, double semitones, Span<float> dest)
     {
+        if (dest.IsEmpty) throw new ArgumentException("Tampon de sortie vide.", nameof(dest));
+        lock (_genLock)
+        {
+            ObjectDisposedException.ThrowIf(_disposed, this);
+            return Run(_gen, window16k, sid, semitones, dest, out _);
+        }
+    }
+
+    /// <summary>Données d'un tenseur de sortie, sans copie quand ONNX Runtime renvoie un tenseur dense (le cas normal).</summary>
+    private static ReadOnlySpan<float> Data(Tensor<float> t) => t is DenseTensor<float> d ? d.Buffer.Span : t.ToArray();
+
+    /// <summary>
+    /// Calcule une fenêtre et copie la voix dans <paramref name="dest"/> ; <paramref name="dest"/> vide : la voix est
+    /// renvoyée dans un nouveau tableau (<paramref name="array"/>).
+    /// </summary>
+    private int Run(RvcGenerator gen, float[] window16k, int sid, double semitones, Span<float> dest, out float[]? array)
+    {
+        array = null;
         // 1) ce qui est dit : 50 trames/s de 768, doublées à 100 trames/s
         using (var vecOut = _vec.Run([NamedOnnxValue.CreateFromTensor("source", new DenseTensor<float>(window16k, [1, Window]))]))
         {
             var embed = vecOut.First().AsTensor<float>();
             int n = embed.Dimensions[1];
+            var data = Data(embed); // [1, n, 768], trame après trame
             for (int t = 0; t < Frames; t++)
             {
                 int src = Math.Min(n - 1, t / 2);
-                for (int k = 0; k < 768; k++) _phone[t * 768 + k] = embed[0, src, k];
+                data.Slice(src * 768, 768).CopyTo(_phone.AsSpan(t * 768, 768));
             }
         }
 
         // 2) la hauteur : spectre mel → RMVPE → f0 (complété à un multiple de 32 trames par des zéros, comme RVC)
         Array.Clear(_melBuf);
-        var mel = new float[MelSpectrogram.Mels * Frames];
-        _mel.Compute(window16k, Frames, mel);
-        for (int m = 0; m < MelSpectrogram.Mels; m++) Array.Copy(mel, m * Frames, _melBuf, m * 128, Frames);
+        _mel.Compute(window16k, Frames, _mel100);
+        for (int m = 0; m < MelSpectrogram.Mels; m++) Array.Copy(_mel100, m * Frames, _melBuf, m * 128, Frames);
         using (var rOut = _rmvpe.Run([NamedOnnxValue.CreateFromTensor("input", new DenseTensor<float>(_melBuf, [1, MelSpectrogram.Mels, 128]))]))
         {
-            var sal = rOut.First().AsTensor<float>().ToArray();
-            Pitch.DecodeRmvpe(sal.AsSpan(0, Frames * Pitch.Bins), Frames, _f0);
+            var sal = Data(rOut.First().AsTensor<float>());
+            Pitch.DecodeRmvpe(sal[..(Frames * Pitch.Bins)], Frames, _f0);
         }
         double ratio = Math.Pow(2, semitones / 12);
-        var pitchf = new float[Frames];
         for (int t = 0; t < Frames; t++)
         {
-            pitchf[t] = (float)(_f0[t] * ratio);
-            _coarse[t] = Pitch.Coarse(pitchf[t]);
+            _pitchf[t] = (float)(_f0[t] * ratio);
+            _coarse[t] = Pitch.Coarse(_pitchf[t]);
         }
 
         // 3) la nouvelle voix
@@ -165,18 +235,35 @@ public sealed class RvcEngine : IDisposable
             NamedOnnxValue.CreateFromTensor("phone", new DenseTensor<float>(_phone, [1, Frames, 768])),
             NamedOnnxValue.CreateFromTensor("phone_lengths", new DenseTensor<long>(new long[] { Frames }, [1])),
             NamedOnnxValue.CreateFromTensor("pitch", new DenseTensor<long>(_coarse, [1, Frames])),
-            NamedOnnxValue.CreateFromTensor("pitchf", new DenseTensor<float>(pitchf, [1, Frames])),
+            NamedOnnxValue.CreateFromTensor("pitchf", new DenseTensor<float>(_pitchf, [1, Frames])),
             NamedOnnxValue.CreateFromTensor("sid", new DenseTensor<long>(new long[] { sid }, [1])),
             NamedOnnxValue.CreateFromTensor("rnd", new DenseTensor<float>(_rnd, [1, 192, Frames])),
         };
         using var gOut = gen.Session.Run(inputs);
-        return gOut.First().AsTensor<float>().ToArray();
+        var audio = Data(gOut.First().AsTensor<float>());
+        if (dest.IsEmpty)
+        {
+            array = audio.ToArray(); // copie seulement hors du fil temps réel (chauffe, outils)
+            return array.Length;
+        }
+        int count = Math.Min(audio.Length, dest.Length);
+        audio[..count].CopyTo(dest);
+        return count;
     }
 
+    /// <summary>
+    /// Libère les trois réseaux sous le même verrou que les calculs : jamais pendant un <c>Run</c> (une session ONNX
+    /// détruite en plein calcul fait tomber l'appli). Attend donc la fin du calcul en cours.
+    /// </summary>
     public void Dispose()
     {
-        _vec.Dispose();
-        _rmvpe.Dispose();
-        lock (_genLock) _gen.Dispose();
+        lock (_genLock)
+        {
+            if (_disposed) return;
+            _disposed = true;
+            _vec.Dispose();
+            _rmvpe.Dispose();
+            _gen.Dispose();
+        }
     }
 }

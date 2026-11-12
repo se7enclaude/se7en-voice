@@ -186,6 +186,7 @@ public partial class MainWindow : Window
         if (_vm == null) return;
         bool shown = IsVisible && WindowState != WindowState.Minimized;
         _vm.MixerVisible = shown && TabMixer.IsChecked == true;
+        _vm.WindowShown = shown;
         if (shown) _spectrumTimer.Start(); else _spectrumTimer.Stop();
     }
 

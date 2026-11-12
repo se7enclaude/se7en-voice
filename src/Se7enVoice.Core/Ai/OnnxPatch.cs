@@ -60,8 +60,19 @@ public static class OnnxPatch
     /// </summary>
     public static byte[] Apply(byte[] model, IEnumerable<(string Name, PthTensor Value)> weights)
     {
-        var index = Index(model);
         var copy = (byte[])model.Clone();
+        ApplyInPlace(copy, weights);
+        return copy;
+    }
+
+    /// <summary>
+    /// Comme <see cref="Apply"/>, mais remplace les poids directement dans <paramref name="model"/> (pas de seconde copie
+    /// de ~110 Mo). En cas d'exception, <paramref name="model"/> peut être à moitié modifié : à jeter.
+    /// </summary>
+    public static void ApplyInPlace(byte[] model, IEnumerable<(string Name, PthTensor Value)> weights)
+    {
+        var index = Index(model);
+        var copy = model;
         foreach (var (name, value) in weights)
         {
             if (!index.TryGetValue(name, out var slot))
@@ -78,7 +89,6 @@ public static class OnnxPatch
             }
             Buffer.BlockCopy(data, 0, copy, (int)slot.Offset, slot.Length);
         }
-        return copy;
     }
 
     private static IEnumerable<(int Field, int Start, int Length)> Fields(byte[] d, int start, int end)

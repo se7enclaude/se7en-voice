@@ -2,6 +2,7 @@ using System.IO;
 using System.Runtime.InteropServices;
 using NAudio.CoreAudioApi;
 using NAudio.Wave;
+using Se7enVoice.Core;
 using Se7enVoice.Core.Audio;
 using Se7enVoice.Core.Dsp;
 
@@ -29,10 +30,13 @@ public sealed class AudioEngine : IDisposable
     private volatile Ai.AiVoice? _ai;
     private readonly float[] _scope = new float[4096];
     private int _scopePos;
+    private int _dataErrors;
+    private volatile bool _running;
 
     public Soundboard Soundboard { get; } = new();
 
-    public bool IsRunning { get; private set; }
+    /// <summary>Lu par l'interface pendant qu'un redémarrage se fait sur un autre fil.</summary>
+    public bool IsRunning { get => _running; private set => _running = value; }
     public string? InputName { get; private set; }
     public bool CableConnected => _cable != null;
     public int SampleRate { get; private set; }
@@ -85,13 +89,28 @@ public sealed class AudioEngine : IDisposable
 
     // ---------- Applis envoyées dans le micro ----------
 
-    /// <summary>Envoie le son de l'appli <paramref name="processId"/> dans le micro virtuel. Lève une exception si Windows refuse.</summary>
+    /// <summary>
+    /// Envoie le son de l'appli <paramref name="processId"/> dans le micro virtuel. Lève une exception si Windows refuse.
+    /// Lent (Windows peut mettre jusqu'à 5 s) : à appeler hors du fil de l'interface. La capture est créée hors du verrou
+    /// pour ne pas bloquer un redémarrage du moteur pendant ce temps.
+    /// </summary>
     public void AddApp(int processId)
     {
+        int rate;
         lock (_lock)
         {
             if (_apps.Any(a => a.ProcessId == processId) || SampleRate == 0) return;
-            var cap = new ProcessLoopbackCapture(processId, SampleRate);
+            rate = SampleRate;
+        }
+        var cap = new ProcessLoopbackCapture(processId, rate);
+        lock (_lock)
+        {
+            // moteur arrêté ou relancé à une autre fréquence entre-temps, ou appli déjà ajoutée : capture inutile
+            if (!IsRunning || SampleRate != rate || _apps.Any(a => a.ProcessId == processId))
+            {
+                cap.Dispose();
+                return;
+            }
             _apps = [.. _apps, cap];
         }
     }
@@ -204,6 +223,16 @@ public sealed class AudioEngine : IDisposable
     }
 
     private void OnData(object? sender, WaveInEventArgs e)
+    {
+        // Une exception ici arrêterait la capture (micro coupé jusqu'à la reconnexion) : on perd ce bloc, pas le micro.
+        try { ProcessBlock(e); }
+        catch (Exception ex)
+        {
+            if (Interlocked.Increment(ref _dataErrors) <= 5) Log.Error("Moteur audio : bloc du micro perdu", ex);
+        }
+    }
+
+    private void ProcessBlock(WaveInEventArgs e)
     {
         var capture = _capture;
         var chain = _chain;

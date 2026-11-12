@@ -93,9 +93,10 @@ public sealed class AppSettings
             File.WriteAllText(tmp, JsonSerializer.Serialize(this, PresetStore.Json));
             File.Move(tmp, FilePath, overwrite: true);
         }
-        catch (IOException)
+        catch (Exception ex)
         {
-            // Pas grave : on réessaiera au prochain changement.
+            // Disque plein, accès refusé, réglage impossible à écrire… pas grave : on réessaiera au prochain changement.
+            Log.Error("Enregistrement des réglages impossible", ex);
         }
     }
 }

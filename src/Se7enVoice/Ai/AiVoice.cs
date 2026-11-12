@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using Se7enVoice.Core;
 using Se7enVoice.Core.Ai;
 using Se7enVoice.Core.Audio;
 
@@ -24,11 +25,15 @@ public sealed class AiVoice : IDisposable
     private readonly float[] _window = new float[RvcEngine.Window];
     private readonly SolaStitcher _sola;
     private readonly float[] _blockOut;
+    private readonly float[] _audio;                       // voix convertie (1 s), réutilisée à chaque bloc
     private readonly ResamplingRing _out;                  // 48 kHz → fréquence du micro, avec tampon et dérive
     private readonly VoiceRange _range = new();
     private readonly Thread _thread;
     private volatile bool _stop;
     private double _semitones;
+    private readonly object _endLock = new();
+    private bool _ended;                                   // le fil est terminé (sous _endLock)
+    private RvcEngine? _engineToDispose;                   // à libérer par le fil en se terminant (sous _endLock)
 
     public AiVoice(RvcEngine engine, int engineRate)
     {
@@ -40,7 +45,9 @@ public sealed class AiVoice : IDisposable
         _marginOut = k * MarginMs;
         _sola = new SolaStitcher(_blockOutLen, k * FadeMs, k * SearchMs);
         _blockOut = new float[_blockOutLen];
+        _audio = new float[engine.OutRate * 2]; // le générateur rend 1 s : de la marge au cas où
         OutRate = engine.OutRate;
+        EngineRate = engineRate;
         _out = new ResamplingRing(engine.OutRate, engineRate, targetLatencyMs: BlockMs + 25);
         _thread = new Thread(Loop) { IsBackground = true, Name = "voix-ia", Priority = ThreadPriority.AboveNormal };
         _thread.Start();
@@ -59,8 +66,12 @@ public sealed class AiVoice : IDisposable
     public double ComputeMs { get; private set; }
     public double LatencyMs => BlockMs + MarginMs + ComputeMs + (BlockMs + 25) / 2.0;
     public string Device => _engine.Device;
+    /// <summary>Le moteur utilisé (libéré avec la voix par <see cref="DisposeWithEngine"/>).</summary>
+    public RvcEngine Engine => _engine;
     /// <summary>Fréquence de la voix produite au moment de la création (si le générateur change de fréquence, il faut recréer).</summary>
     public int OutRate { get; }
+    /// <summary>Fréquence du micro pour laquelle cette conversion a été créée.</summary>
+    public int EngineRate { get; }
     public bool TooSlow => ComputeMs > BlockMs * 0.9;
     private int _errors;
     /// <summary>Non null quand la conversion échoue en boucle (carte graphique réinitialisée…) : il faut recharger le moteur.</summary>
@@ -75,8 +86,20 @@ public sealed class AiVoice : IDisposable
             _toModel.Process(mic, _resampled);
             _pending.AddRange(_resampled);
             if (_pending.Count > 16000) _pending.RemoveRange(0, _pending.Count - 16000); // on a pris du retard : on rattrape
+            if (_pending.Count < Block16) return;
         }
-        if (_pending.Count >= Block16) _wake.Set();
+        Wake();
+    }
+
+    /// <summary>
+    /// Réveille le fil de calcul. Le fil audio peut encore appeler <see cref="Push"/> juste après l'arrêt (il avait lu la
+    /// voix IA avant qu'elle soit retirée du moteur) : le signal peut alors être déjà libéré, ce n'est pas une erreur.
+    /// </summary>
+    private void Wake()
+    {
+        if (_stop && _ended) return;
+        try { _wake.Set(); }
+        catch (ObjectDisposedException) { }
     }
 
     /// <summary>Thread audio : remplace <paramref name="dest"/> par la voix convertie (silence au tout début).</summary>
@@ -105,30 +128,62 @@ public sealed class AiVoice : IDisposable
                 double semis = ManualSemitones ?? _range.SemitonesTo(TargetHz);
                 // la hauteur automatique bouge doucement (pas de saut au milieu d'une phrase)
                 _semitones = ManualSemitones ?? _semitones + (semis - _semitones) * 0.1;
-                float[] audio;
-                try { audio = _engine.Convert(_window, Sid, _semitones); _errors = 0; }
+                int length;
+                try { length = _engine.Convert(_window, Sid, _semitones, _audio); _errors = 0; }
                 catch (Exception ex)
                 {
+                    if (_stop) break; // arrêt en cours (moteur libéré) : ce n'est pas une panne
                     // 3 échecs de suite (≈ 0,3 s) : la carte graphique est perdue, l'interface recharge tout
-                    if (++_errors >= 3 && Failure == null) Failure = ex;
+                    if (++_errors >= 3 && Failure == null)
+                    {
+                        Failure = ex;
+                        Log.Error("Voix IA : la conversion échoue en boucle", ex);
+                    }
                     if (Failure != null) Thread.Sleep(50);
                     continue;
                 }
                 _range.Add(_engine.LastF0[^(Block16 / 160)..]); // trames du dernier bloc (voix de l'utilisateur, avant décalage)
                 ComputeMs = watch.Elapsed.TotalMilliseconds;
 
-                int end = audio.Length - _marginOut;
-                _sola.Process(audio.AsSpan(end - _sola.Needed, _sola.Needed), _blockOut);
+                int end = length - _marginOut;
+                _sola.Process(_audio.AsSpan(end - _sola.Needed, _sola.Needed), _blockOut);
                 _out.Write(_blockOut);
             }
         }
+
+        // fin du fil : plus personne n'attend le signal ; le moteur est libéré ici si on nous l'a confié
+        RvcEngine? engine;
+        lock (_endLock)
+        {
+            _ended = true;
+            engine = _engineToDispose;
+        }
+        _wake.Dispose();
+        try { engine?.Dispose(); }
+        catch (Exception ex) { Log.Error("Voix IA : libération du moteur", ex); }
     }
 
+    /// <summary>Arrête la conversion (attend au plus 1 s la fin du calcul en cours). Le moteur est gardé : il resservira.</summary>
     public void Dispose()
     {
         _stop = true;
-        _wake.Set();
+        Wake();
         _thread.Join(1000);
-        _wake.Dispose(); // le moteur (les réseaux chargés) est gardé : il resservira
+    }
+
+    /// <summary>
+    /// Arrête la conversion et libère aussi le moteur : tout de suite si le fil s'est arrêté, sinon par le fil lui-même
+    /// quand son calcul en cours se termine (jamais de réseau détruit pendant un calcul, et l'interface n'attend pas).
+    /// </summary>
+    public void DisposeWithEngine()
+    {
+        Dispose();
+        bool now;
+        lock (_endLock)
+        {
+            now = _ended;
+            if (!now) _engineToDispose = _engine;
+        }
+        if (now) _engine.Dispose();
     }
 }

@@ -1,5 +1,7 @@
 using System.Windows;
+using System.Windows.Threading;
 using Se7enVoice.Audio;
+using Se7enVoice.Core;
 
 namespace Se7enVoice;
 
@@ -11,6 +13,16 @@ public partial class App : Application
 
     protected override void OnStartup(StartupEventArgs e)
     {
+        // Filet : toute erreur imprévue est écrite dans %AppData%\Se7enVoice\log.txt.
+        DispatcherUnhandledException += OnDispatcherUnhandledException;
+        AppDomain.CurrentDomain.UnhandledException += (_, args) =>
+            Log.Write((args.IsTerminating ? "Plantage" : "Erreur") + " (hors interface) : " + args.ExceptionObject);
+        TaskScheduler.UnobservedTaskException += (_, args) =>
+        {
+            Log.Error("Erreur d'une tâche en arrière-plan", args.Exception);
+            args.SetObserved();
+        };
+
         // Processus admin lancé uniquement pour renommer VB-CABLE.
         if (e.Args.Contains(CableRenamer.Argument))
         {
@@ -69,6 +81,16 @@ public partial class App : Application
             while (signal.WaitOne())
                 Dispatcher.BeginInvoke(window.ShowFromTray);
         }) { IsBackground = true, Name = "show-signal" }.Start();
+    }
+
+    /// <summary>
+    /// Erreur imprévue sur le fil de l'interface : on la note et l'appli continue (le micro et la voix restent en
+    /// service) plutôt que de tout fermer en pleine partie.
+    /// </summary>
+    private void OnDispatcherUnhandledException(object sender, DispatcherUnhandledExceptionEventArgs e)
+    {
+        Log.Error("Erreur dans l'interface", e.Exception);
+        e.Handled = true;
     }
 
     protected override void OnExit(ExitEventArgs e)

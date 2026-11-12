@@ -1,6 +1,7 @@
 using System.Collections.ObjectModel;
 using System.IO;
 using Se7enVoice.Ai;
+using Se7enVoice.Core;
 using Se7enVoice.Core.Ai;
 
 namespace Se7enVoice.ViewModels;
@@ -24,7 +25,7 @@ public sealed partial class MainViewModel
     private bool _aiBusy, _aiAgain, _aiDownloading;
     private double _aiProgress;
     private string _aiStatus = "";
-    private int _aiStatusTick;
+    private DateTime _aiStatusTick;
     private CancellationTokenSource? _aiCancel;
 
     public ObservableCollection<AiVoiceItem> AiVoices { get; } = new(Core.Ai.AiVoices.All.Select(v => new AiVoiceItem(v)));
@@ -177,14 +178,24 @@ public sealed partial class MainViewModel
             _aiAgain = false;
             if (!AiOn || !Engine.IsRunning || !AiModels.Ready)
             {
-                StopAi();
+                // éteinte alors qu'elle tournait sur le processeur faute de carte graphique : on libère le moteur pour
+                // réessayer la carte au prochain allumage (sinon le processeur resterait jusqu'au redémarrage)
+                if (!AiOn && _rvc is { GpuFallbackReason: not null }) ResetAiEngine();
+                else StopAi();
                 if (AiOn && !AiModels.Ready) AiStatus = "";
                 return;
             }
             if (_rvc == null)
             {
                 AiStatus = "Chargement sur la carte graphique…";
-                _rvc = await Task.Run(() => RvcEngine.Load(AiModels.Folder));
+                var loaded = await Task.Run(() => RvcEngine.Load(AiModels.Folder));
+                _rvc = loaded;
+                if (loaded.GpuFallbackReason is { } why)
+                {
+                    if (why.Length > 140) why = why[..140] + "…";
+                    Notify?.Invoke("Voix IA sur le processeur (plus lente) : la carte graphique n'est pas utilisable (" + why
+                        + "). Éteignez puis rallumez la voix IA pour réessayer la carte graphique.");
+                }
             }
             // générateur de la voix choisie : voix fournies, ou voix importée (son propre fichier)
             var voice = CurrentAiVoice;
@@ -208,17 +219,20 @@ public sealed partial class MainViewModel
                 if (!sameRate) StopAi(); // la sortie change de fréquence : on recrée la conversion
                 rvc.UseGenerator(g);
             }
-            if (_ai == null || Engine.Ai == null)
+            // redémarrage du micro en cours : il recréera la voix IA à la nouvelle fréquence une fois fini
+            if (_audioRestarting) return;
+            if (_ai == null || Engine.Ai == null || _ai.EngineRate != Engine.SampleRate)
             {
                 StopAi();
                 _ai = new AiVoice(_rvc, Engine.SampleRate);
                 UpdateAiParams();
                 Engine.Ai = _ai;
             }
-          } while (_aiAgain && AiOn && Engine.IsRunning);
+          } while (_aiAgain); // éteinte ou micro arrêté entre-temps : le haut de la boucle arrête la voix IA
         }
         catch (Exception ex)
         {
+            Log.Error("Voix IA : démarrage impossible", ex);
             ResetAiEngine();
             if (RvcEngine.IsDeviceLost(ex) && AllowAiRecovery())
             {
@@ -258,18 +272,35 @@ public sealed partial class MainViewModel
         return true;
     }
 
-    /// <summary>Libère tout ce qui est sur la carte graphique (pour repartir de zéro après une réinitialisation).</summary>
+    /// <summary>
+    /// Libère tout ce qui est sur la carte graphique (pour repartir de zéro après une réinitialisation). Le moteur n'est
+    /// jamais libéré pendant un calcul : si le fil de la voix IA n'a pas fini dans le délai, c'est lui qui le libère
+    /// en se terminant.
+    /// </summary>
     private void ResetAiEngine()
     {
-        StopAi();
-        try { _rvc?.Dispose(); } catch { /* carte perdue : la libération peut échouer */ }
+        var ai = _ai;
+        var rvc = _rvc;
+        Engine.Ai = null;
+        _ai = null;
         _rvc = null;
+        if (!AiOn) AiStatus = "";
+        try
+        {
+            ai?.DisposeWithEngine();
+            if (rvc != null && !ReferenceEquals(ai?.Engine, rvc)) rvc.Dispose();
+        }
+        catch (Exception ex)
+        {
+            Log.Error("Voix IA : libération du moteur", ex); // carte perdue : la libération peut échouer
+        }
     }
 
     /// <summary>La conversion échoue en boucle (carte graphique réinitialisée) : on recharge tout.</summary>
     private async Task RecoverAiAsync(Exception failure)
     {
         if (_aiBusy) return;
+        Log.Write("Voix IA : rechargement après des échecs en boucle (" + failure.Message + ")");
         ResetAiEngine();
         if (!AllowAiRecovery())
         {
@@ -303,7 +334,10 @@ public sealed partial class MainViewModel
     /// <summary>Appelé par le minuteur des vu-mètres : met à jour la ligne d'état de la voix IA (2 fois par seconde).</summary>
     private void TickAi()
     {
-        if (++_aiStatusTick % 15 != 0) return;
+        // 2 fois par seconde, que le minuteur des vu-mètres soit rapide (fenêtre affichée) ou ralenti (fenêtre cachée)
+        var now = DateTime.UtcNow;
+        if (now - _aiStatusTick < TimeSpan.FromMilliseconds(490)) return;
+        _aiStatusTick = now;
         var ai = _ai;
         if (ai == null || !AiOn) return;
         if (ai.Failure is { } failure)
@@ -317,10 +351,5 @@ public sealed partial class MainViewModel
             : $"{ai.Device} · {ai.ComputeMs:0} ms · retard ≈ {ai.LatencyMs:0} ms · {pitch}";
     }
 
-    private void DisposeAi()
-    {
-        StopAi();
-        _rvc?.Dispose();
-        _rvc = null;
-    }
+    private void DisposeAi() => ResetAiEngine();
 }
